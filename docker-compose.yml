@@ -1,0 +1,58 @@
+services:
+  db:
+    build:
+      context: ./backend/postgres
+    container_name: bank_db
+    command: ["postgres", "-c", "timezone=UTC"]
+    environment:
+      POSTGRES_DB: bank_transactions
+      POSTGRES_USER: bank_user
+      POSTGRES_PASSWORD: bank_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bank_user -d bank_transactions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      target: runtime
+    container_name: bank_api
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bank_user:bank_password@db:5432/bank_transactions
+      - SQS_INTERNATIONAL_QUEUE_URL=${SQS_INTERNATIONAL_QUEUE_URL:-}
+      - AWS_REGION=${AWS_REGION:-eu-west-1}
+      - INTERNAL_SERVICE_API_KEY=${INTERNAL_SERVICE_API_KEY:-dev-internal-key}
+      - ALLOWED_ORIGINS_RAW=${ALLOWED_ORIGINS_RAW:-http://localhost:3000,http://localhost:5173}
+      - DEBUG=true
+      - ENVIRONMENT=development
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #   container_name: bank_frontend
+  #   depends_on:
+  #     - api
+  #   ports:
+  #     - "5173:5173"
+  #   restart: unless-stopped
+
+volumes:
+  db_data:
