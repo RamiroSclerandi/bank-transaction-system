@@ -1,5 +1,5 @@
 repos:
-  # ── General file hygiene ───────────────────────────────────────────────────
+  # ── General file hygiene ───
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
@@ -11,15 +11,18 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=600"]
 
-  # ── Ruff — linting + formatting ───────────────────────────────────────────
+  # ── Ruff — linting + formatting ───
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.10
     hooks:
       - id: ruff
-        args: ["--fix"]
+        args: ["--fix", "--config", "backend/pyproject.toml"]
+        files: ^backend/
       - id: ruff-format
+        args: ["--config", "backend/pyproject.toml"]
+        files: ^backend/
 
-  # ── Mypy — type checking ──────────────────────────────────────────────────
+  # ── Mypy — type checking ───
   - repo: local
     hooks:
       - id: mypy

@@ -1,7 +1,6 @@
 services:
   db:
-    build:
-      context: ./backend/postgres
+    image: postgres:16
     container_name: bank_db
     command: ["postgres", "-c", "timezone=UTC"]
     environment:

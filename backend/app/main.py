@@ -15,14 +15,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import text
+from utils.logging import setup_logging
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
-from utils.logging import setup_logging
+from app.db.session import engine
 
 
 @asynccontextmanager
@@ -41,8 +43,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     log_level = "DEBUG" if settings.DEBUG else "INFO"
     setup_logging(log_level=log_level)
-
-    from loguru import logger
 
     logger.info(
         "Starting {app_name} v{version} [{env}]",
@@ -114,8 +114,6 @@ async def readiness_check() -> JSONResponse:
         JSON body with status and db ping result.
 
     """
-    from app.db.session import engine
-
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))

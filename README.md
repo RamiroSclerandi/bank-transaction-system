@@ -1,27 +1,24 @@
 # Bank Transaction System
 
-An internal transaction platform built for a small EU-based online bank. It handles both domestic (national) and international payment transfers, provides a monitoring interface for bank staff, and is designed from the ground up to be secure, reliable, and easy to scale.
-
----
+An internal payment platform for a small EU-based online bank. Handles domestic and international transfers, scheduled payments, and gives bank staff a read-only view to monitor activity.
 
 ## What the system does
 
-- **Processes payments** — customers can submit national or international transfers using debit or credit cards.
-- **Handles scheduled payments** — transactions can be set for a future date; the system executes them automatically within a 5-minute window.
-- **Routes international payments asynchronously** — international transfers are queued and handed off to an external processor, keeping the system decoupled from third-party availability.
-- **Provides a staff monitoring interface** — a separate backoffice UI lets authorized bank employees search for transactions by ID, filter by account and date range, and view the full history.
-- **Keeps a full audit trail** — every login attempt (successful or not) and every logout is permanently recorded.
+- **Processes payments**: Customers can submit national or international transfers using debit or credit cards.
+- **Handles scheduled payments**: Transactions can be set for a future date; the system executes them automatically within a 5-minute window.
+- **Routes international payments asynchronously**: International transfers go into a queue and are picked up by an external processor.
+- **Provides a staff monitoring interface**: A separate Bank Customer Support (BCS) UI lets authorized bank employees search for transactions by ID, filter by account and date range, and view the full history.
+- **Keeps a full audit trail**: Every login attempt (successful or not) and every logout is permanently recorded.
 
 ## What it does NOT do
 
 Card issuance, credit limit management, customer onboarding, fraud detection, or currency conversion are outside the scope of this system.
 
----
-
-## How it works (non-technical overview)
+## How it works (overview)
 
 ```
 Customer / External Service
+        │
         │  HTTPS
         ▼
   Transaction API  ──── PostgreSQL database
@@ -31,14 +28,13 @@ Customer / External Service
         └── Scheduled payment  → stored → executed automatically later
 
 Bank Staff Browser
+        │
         │  HTTPS
         ▼
   Backoffice UI  ──── same Transaction API (read-only views)
 ```
 
-All communication happens over encrypted HTTPS connections. Sensitive fields (email, phone, national ID) are masked in application logs.
-
----
+All traffic is over encrypted HTTPS.
 
 ## Technical stack
 
@@ -51,61 +47,43 @@ All communication happens over encrypted HTTPS connections. Sensitive fields (em
 | Scheduling            | AWS EventBridge + Lambda                         |
 | Packaging             | uv                                               |
 | Linting / types       | Ruff · Mypy                                      |
-| Tests                 | Pytest (29 passing)                              |
+| Tests                 | Pytest                                           |
 | Infrastructure target | Docker · AWS ECS · AWS RDS                       |
 
 For full architecture decisions, data model, and security design, see the [Technical Design Document](documents/DESIGN_DOCUMENT.md).
-
----
 
 ## Getting started (local development)
 
 ### Prerequisites
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (`pip install uv` or see the docs)
-- Docker (for running PostgreSQL locally)
-- AWS credentials configured if you need SQS
+- Docker
+- `make`
+- AWS credentials configured (for SQS)
 
-### 1. Clone and configure environment
+### Quickstart
 
 ```bash
 git clone <repo-url>
 cd bank-transaction-system
-cp .env.example .env
-# Edit .env and fill in the required values (see comments in the file)
+cp .env.example .env           # fill in the required values
+make up                        # builds images, starts DB + API
+make migrate                   # run Alembic migrations
+make seed                      # create the first admin user (needs ADMIN_PASSWORD in .env)
 ```
 
-### 2. Start the database
+API: `http://localhost:8000` — Swagger docs: `http://localhost:8000/docs`
 
-```bash
-docker compose up db -d
+### Available commands
+
 ```
-
-### 3. Install dependencies and run migrations
-
-```bash
-cd backend
-uv sync
-uv run alembic upgrade head
+make up       — build and start the full stack
+make down     — stop containers
+make build    — rebuild images without starting
+make logs     — follow all logs  (make logs s=api for one service)
+make migrate  — run Alembic migrations
+make seed     — seed the first admin user
+make dev      — DB in Docker + API with hot-reload (needs uv installed locally)
 ```
-
-### 4. Seed the first admin user
-
-```bash
-# Make sure ADMIN_PASSWORD is set in .env first
-uv run python scripts/seed_admin.py
-```
-
-### 5. Start the API
-
-```bash
-uv run uvicorn app.main:app --reload
-```
-
-The API will be available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
-
----
 
 ## Project structure
 
@@ -129,8 +107,6 @@ bank-transaction-system/
 └── README.md
 ```
 
----
-
 ## Running tests
 
 ```bash
@@ -138,11 +114,7 @@ cd backend
 uv run pytest
 ```
 
----
-
 ## Security notes
 
-- Never commit `.env` to version control — it contains credentials.
 - `ADMIN_PASSWORD` must be set before running `seed_admin.py` in any non-local environment.
 - `INTERNAL_SERVICE_API_KEY` must be a strong random secret (32+ bytes) in production.
-- All secrets in production should be injected from AWS Secrets Manager, not environment variables.

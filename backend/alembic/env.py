@@ -15,13 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from alembic import context
 from app.core.config import settings
 from app.db.base import Base
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 
@@ -34,10 +33,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def run_migrations_offline() -> None:
+def run_migrations_offline():
     """
     Run migrations in 'offline' mode (generates SQL without a live connection).
-
     Useful for generating SQL scripts for review or execution by a DBA.
     """
     url = config.get_main_option("sqlalchemy.url")
@@ -51,7 +49,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection: Connection) -> None:
+def do_run_migrations(connection: Connection):
     """
     Execute migrations against an open synchronous connection.
 
@@ -66,10 +64,9 @@ def do_run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 
-async def run_async_migrations() -> None:
+async def run_async_migrations():
     """
     Create an async engine and run migrations via run_sync.
-
     Uses NullPool so no connections are held open after migrations complete.
     """
     connectable = async_engine_from_config(
@@ -82,7 +79,7 @@ async def run_async_migrations() -> None:
     await connectable.dispose()
 
 
-def run_migrations_online() -> None:
+def run_migrations_online():
     """Entry point for online migrations (live DB connection)."""
     asyncio.run(run_async_migrations())
 

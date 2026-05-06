@@ -1,6 +1,5 @@
 """
 CRUD operations for Transaction.
-
 IMMUTABILITY CONTRACT: No method in this module issues UPDATE or DELETE
 against the transactions table via customer-facing code paths.
 The only mutations allowed are:

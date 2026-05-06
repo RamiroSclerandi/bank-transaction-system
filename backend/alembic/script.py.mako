@@ -18,11 +18,11 @@ branch_labels: str | Sequence[str] | None = ${repr(branch_labels)}
 depends_on: str | Sequence[str] | None = ${repr(depends_on)}
 
 
-def upgrade() -> None:
+def upgrade():
     """Apply the migration."""
     ${upgrades if upgrades else "pass"}
 
 
-def downgrade() -> None:
+def downgrade():
     """Revert the migration."""
     ${downgrades if downgrades else "pass"}
