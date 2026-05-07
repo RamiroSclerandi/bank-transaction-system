@@ -7,6 +7,7 @@ Login and logout are handled by the unified auth router (auth.py).
 
 from fastapi import APIRouter, Request, status
 
+from app.core.rate_limit import limiter
 from app.deps import DbDep
 from app.schemas.account import AccountRead
 from app.schemas.user import (
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/auth", tags=["customer-auth"])
     status_code=status.HTTP_201_CREATED,
     summary="Register a new customer and open a session",
 )
+@limiter.limit("3/hour")  # type: ignore[reportUntypedFunctionDecorator]
 async def register(
     body: CustomerUserCreate,
     request: Request,
