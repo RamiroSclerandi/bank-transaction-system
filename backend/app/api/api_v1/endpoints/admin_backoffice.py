@@ -11,14 +11,13 @@ in the admin_auth endpoints (POST /admin/auth/login, POST /admin/auth/logout).
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 
-from app.crud.user import crud_user
 from app.deps import AdminDep, DbDep
 from app.models.transaction import TransactionStatus, TransactionType
 from app.schemas.transaction import TransactionListFilters, TransactionRead
 from app.schemas.user import AdminUserCreate, UserReadAdmin
-from app.services import admin_service
+from app.services import transaction_service, user_service
 
 router = APIRouter(prefix="/admin", tags=["admin-functions"])
 
@@ -68,7 +67,9 @@ async def list_transactions(
         limit=limit,
         offset=offset,
     )
-    transactions = await admin_service.list_transactions(db=db, filters=filters)
+    transactions = await transaction_service.list_transactions_admin(
+        db=db, filters=filters
+    )
     return [TransactionRead.model_validate(t) for t in transactions]
 
 
@@ -96,7 +97,7 @@ async def get_transaction_admin(
         TransactionRead: The transaction matching the given ID.
 
     """
-    transaction = await admin_service.get_transaction(
+    transaction = await transaction_service.get_transaction_admin(
         db=db, transaction_id=transaction_id
     )
     return TransactionRead.model_validate(transaction)
@@ -134,12 +135,5 @@ async def create_admin_user(
         HTTPException: 409 if the email is already in use.
 
     """
-    existing = await crud_user.get_by_email(db, email=body.email)
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists.",
-        )
-    async with db.begin():
-        user = await crud_user.create_admin(db, data=body)
+    user = await user_service.create_admin(db, data=body)
     return UserReadAdmin.model_validate(user)

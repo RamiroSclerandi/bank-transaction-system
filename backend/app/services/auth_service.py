@@ -1,10 +1,10 @@
 """
-Admin (BCS) business logic service. Auth events (login / logout) are recorded
-in the audit log. Handles transaction data access and admin session lifecycle.
-Data reads do NOT produce audit log entries — reads are not state-change events.
+Authentication business logic service.
+Centralises login, logout and session management for all user roles.
+This service is role-agnostic: it validates credentials and manages
+sessions without knowledge of what a user can do once authenticated.
 """
 
-import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request, status
@@ -16,56 +16,56 @@ from app.core.security import (
     verify_password,
 )
 from app.crud.audit_log import crud_audit_log, crud_user_session
-from app.crud.transaction import crud_transaction
 from app.crud.user import crud_user
 from app.models.audit_log import AuditLogAction, UserSession
-from app.models.transaction import Transaction
 from app.models.user import User, UserRole
-from app.schemas.transaction import TransactionListFilters
 
 _SESSION_TTL_HOURS = 1
 
 
-# Private helpers
+# Private Helper
 def _extract_ip(request: Request) -> str | None:
     """Return the client IP from the request, or None if unavailable."""
     return request.client.host if request.client else None
 
 
-# Auth lifecycle
 async def authenticate_user(
     db: AsyncSession,
     *,
     email: str,
     password: str,
+    role: UserRole,
 ) -> User:
     """
-    Validate email/password credentials and return the admin user.
+    Validate email/password credentials and return the user if the role matches.
+    Uses a constant-time code path regardless of whether the email exists to
+    prevent user-enumeration via timing attacks.
 
     Args:
     ----
         db: Active async database session.
         email: The email address submitted by the client.
         password: The plain-text password submitted by the client.
+        role: The expected role of the user (admin or customer).
 
     Returns:
     -------
-        The matching User instance with role=admin.
+        The matching User instance.
 
     Raises:
     ------
         HTTPException: 401 if the email is not found, the password is wrong,
-            or the user does not have the admin role.
+            or the user does not have the expected role.
 
     """
     user = await crud_user.get_by_email(db, email=email)
-    # always call verify_password even on miss to avoid leaking
-    # whether the email exists via timing differences.
+    # Always call verify_password even on miss to avoid leaking whether the
+    # email exists via timing differences.
     dummy_hash = "$2b$12$invalidhashpadding000000000000000000000000000000000000"
     stored_hash = user.password_hash if user is not None else dummy_hash
     password_ok = verify_password(password, stored_hash)
 
-    if user is None or not password_ok or user.role != UserRole.admin:
+    if user is None or not password_ok or user.role != role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials.",
@@ -79,18 +79,20 @@ async def login(
     *,
     email: str,
     password: str,
+    role: UserRole,
 ) -> tuple[UserSession, str]:
     """
-    Authenticate an admin user and create a server-side session.
-    Validates credentials, enforces IP policy, creates or replaces the
-    UserSession row, and records a login audit event.
+    Authenticate a user and create a server-side session.
+    Validates credentials, enforces IP policy if ``user.registered_ip`` is set,
+    creates or replaces the UserSession row, and records a login audit event.
 
     Args:
     ----
         db: Active async database session.
         request: Incoming HTTP request (IP extraction).
-        email: Admin email address.
+        email: User email address.
         password: Plain-text password.
+        role: Expected user role (admin or customer).
 
     Returns:
     -------
@@ -104,7 +106,7 @@ async def login(
         HTTPException: 403 if the request IP does not match user.registered_ip.
 
     """
-    user = await authenticate_user(db, email=email, password=password)
+    user = await authenticate_user(db, email=email, password=password, role=role)
     ip = _extract_ip(request)
 
     if user.registered_ip and ip != user.registered_ip:
@@ -149,13 +151,13 @@ async def logout(
     user: User,
 ) -> None:
     """
-    Invalidate the admin session and record a logout audit event.
+    Invalidate the user session and record a logout audit event.
 
     Args:
     ----
         db: Active async database session.
         request: Incoming HTTP request (IP extraction).
-        user: Authenticated admin user.
+        user: Authenticated user.
 
     """
     ip = _extract_ip(request)
@@ -164,87 +166,3 @@ async def logout(
             db, user_id=user.id, action=AuditLogAction.logout, ip_address=ip
         )
         await crud_user_session.delete(db, user_id=user.id)
-
-
-# Session validation
-async def require_active_session(
-    db: AsyncSession,
-    user: User,
-) -> None:
-    """
-    Verify that an active, non-expired session exists for the admin user.
-    Called as a guard on every admin data endpoint. Rejects requests when the
-    session has been invalidated (e.g. after logout from another device).
-
-    Args:
-    ----
-        db: Active async database session.
-        user: Authenticated admin user.
-
-    Raises:
-    ------
-        HTTPException: 401 if no active session exists or it has expired.
-
-    """
-    session = await crud_user_session.get_by_user_id(db, user_id=user.id)
-    if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No active session. Please log in again.",
-        )
-    now = datetime.now(tz=UTC).replace(tzinfo=None)
-    if session.expires_at < now:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired. Please log in again.",
-        )
-
-
-# Data access
-async def list_transactions(
-    db: AsyncSession,
-    filters: TransactionListFilters,
-) -> list[Transaction]:
-    """
-    Return filtered transactions.
-
-    Args:
-    ----
-        db: Active async database session.
-        filters: Query filters to apply.
-
-    Returns:
-    -------
-        A list of Transaction ORM instances matching the filters.
-
-    """
-    return await crud_transaction.list_filtered(db, filters=filters)
-
-
-async def get_transaction(
-    db: AsyncSession,
-    transaction_id: uuid.UUID,
-) -> Transaction:
-    """
-    Return a single transaction by ID.
-
-    Args:
-    ----
-        db: Active async database session.
-        transaction_id: UUID of the transaction to retrieve.
-
-    Returns:
-    -------
-        The Transaction ORM instance.
-
-    Raises:
-    ------
-        HTTPException: 404 if the transaction does not exist.
-
-    """
-    transaction = await crud_transaction.get(db, transaction_id=transaction_id)
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found."
-        )
-    return transaction

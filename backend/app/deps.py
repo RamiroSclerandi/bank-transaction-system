@@ -2,6 +2,11 @@
 Shared FastAPI dependencies. All route handlers obtain their database sessions
 and authenticated users through these dependencies, keeping the endpoint layer thin
 and testable.
+
+Dependency hierarchy:
+    get_current_user  →  validates token + session + expiry, returns User
+    get_current_admin →  calls get_current_user, checks role=admin + IP
+    get_current_customer → calls get_current_user, checks role=customer
 """
 
 import hmac
@@ -35,33 +40,27 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def get_current_admin(
+async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
-    request: Request,
     db: DbDep,
 ) -> User:
     """
-    Dependency: resolve and validate a session-based admin request.
-    Extracts the Bearer token from the Authorization header, computes its
-    SHA-256 digest, looks up the matching UserSession, and enforces:
-      1. Session existence — 401 if not found (token invalid or logged out).
-      2. Session expiry   — 401 if expires_at is in the past.
-      3. IP consistency   — 403 if the request IP differs from the session IP.
+    Dependency: resolve and validate a session-based request.
+    Extracts the Bearer token, hashes it, looks up the matching UserSession,
+    and enforces session existence and expiry. Role-agnostic.
 
     Args:
     ----
         credentials: Bearer credentials from the Authorization header.
-        request: Incoming HTTP request (for IP extraction).
         db: Injected database session.
 
     Returns:
     -------
-        The authenticated admin User loaded via the session relationship.
+        The authenticated User loaded via the session relationship.
 
     Raises:
     ------
         HTTPException: 401 if the session is not found or has expired.
-        HTTPException: 403 if the request IP does not match the session IP.
 
     """
     token_hash = hash_session_token(credentials.credentials)
@@ -82,40 +81,71 @@ async def get_current_admin(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    client_ip = request.client.host if request.client else None
-    if session.ip_address and client_ip != session.ip_address:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Request IP does not match the session IP.",
-        )
-
     user = await crud_user.get(db, user_id=session.user_id)
-    if user is None or user.role != UserRole.admin:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin user not found.",
+            detail="User not found.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
 
 
-async def get_current_customer(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+async def get_current_admin(
+    user: CurrentUserDep,
     request: Request,
-    db: DbDep,
 ) -> User:
     """
-    Dependency: authenticated customer via session token.
-    Resolves the Bearer token to a UserSession and validates:
-      - Session existence (not logged out)
-      - Session expiry (1-hour TTL)
-      - IP consistency (request IP must match the IP used at login)
+    Dependency: enforce admin role and IP restriction.
+    Calls get_current_user first, then validates:
+      1. Role — 401 if not admin.
+      2. IP consistency — 403 if registered_ip is set and does not match.
 
     Args:
     ----
-        credentials: Bearer token from the Authorization header.
-        request: Incoming HTTP request (IP extraction).
-        db: Injected database session.
+        user: Authenticated user resolved by get_current_user.
+        request: Incoming HTTP request (for IP extraction).
+
+    Returns:
+    -------
+        The authenticated admin User.
+
+    Raises:
+    ------
+        HTTPException: 401 if the user does not have the admin role.
+        HTTPException: 403 if registered_ip is set and does not match the request IP.
+
+    """
+    if user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin user not found.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    client_ip = request.client.host if request.client else None
+    if user.registered_ip and client_ip != user.registered_ip:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Request IP does not match the registered IP.",
+        )
+
+    return user
+
+
+async def get_current_customer(
+    user: CurrentUserDep,
+) -> User:
+    """
+    Dependency: enforce customer role.
+    Calls get_current_user first, then validates role=customer.
+
+    Args:
+    ----
+        user: Authenticated user resolved by get_current_user.
 
     Returns:
     -------
@@ -123,37 +153,10 @@ async def get_current_customer(
 
     Raises:
     ------
-        HTTPException: 401 if the session is missing, expired, or invalid.
-        HTTPException: 403 if the request IP does not match the session IP.
+        HTTPException: 401 if the user does not have the customer role.
 
     """
-    token_hash = hash_session_token(credentials.credentials)
-    session = await crud_user_session.get_by_token_hash(db, token_hash=token_hash)
-
-    if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session. Please log in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    now = datetime.now(tz=UTC).replace(tzinfo=None)
-    if session.expires_at < now:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired. Please log in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    client_ip = request.client.host if request.client else None
-    if session.ip_address and client_ip != session.ip_address:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Request IP does not match the session IP.",
-        )
-
-    user = await crud_user.get(db, user_id=session.user_id)
-    if user is None or user.role != UserRole.customer:
+    if user.role != UserRole.customer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Customer user not found.",

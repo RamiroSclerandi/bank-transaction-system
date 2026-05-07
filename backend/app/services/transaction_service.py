@@ -30,7 +30,11 @@ from app.models.transaction import (
     TransactionType,
 )
 from app.models.user import User
-from app.schemas.transaction import TransactionCreate, WebhookUpdate
+from app.schemas.transaction import (
+    TransactionCreate,
+    TransactionListFilters,
+    WebhookUpdate,
+)
 from app.services import sqs_service
 
 
@@ -391,3 +395,52 @@ async def list_account_transactions_for_customer(
     return await crud_transaction.list_by_account(
         db, account_id=account_id, limit=limit, offset=offset
     )
+
+
+async def list_transactions_admin(
+    db: AsyncSession,
+    filters: TransactionListFilters,
+) -> list[Transaction]:
+    """
+    Return filtered transactions for admin use.
+
+    Args:
+    ----
+        db: Active async database session.
+        filters: Query filters to apply.
+
+    Returns:
+    -------
+        A list of Transaction ORM instances matching the filters.
+
+    """
+    return await crud_transaction.list_filtered(db, filters=filters)
+
+
+async def get_transaction_admin(
+    db: AsyncSession,
+    transaction_id: uuid.UUID,
+) -> Transaction:
+    """
+    Return a single transaction by ID for admin use.
+
+    Args:
+    ----
+        db: Active async database session.
+        transaction_id: UUID of the transaction to retrieve.
+
+    Returns:
+    -------
+        The Transaction ORM instance.
+
+    Raises:
+    ------
+        HTTPException: 404 if the transaction does not exist.
+
+    """
+    transaction = await crud_transaction.get(db, transaction_id=transaction_id)
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found."
+        )
+    return transaction
