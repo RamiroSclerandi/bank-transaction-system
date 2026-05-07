@@ -45,3 +45,7 @@ frontend/build/
 .vscode/
 .idea/
 *.swp
+
+# ── AI ──
+AGENTS.md
+.github/

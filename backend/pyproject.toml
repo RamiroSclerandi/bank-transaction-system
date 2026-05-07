@@ -62,8 +62,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "D"]
-"app/models/**" = ["F821"]  # SQLAlchemy string forward refs resolved at mapper config
+"backend/tests/**" = ["S101", "S105", "S106", "D"]
+"backend/app/models/**" = ["F821"]  # SQLAlchemy string forward refs resolved at mapper config
 
 [tool.mypy]
 python_version = "3.12"

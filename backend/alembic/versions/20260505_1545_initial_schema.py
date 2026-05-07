@@ -1,15 +1,13 @@
 """
 Initial schema.
-
-Revision ID: a1b2c3d4e5f6
-Revises:
-Create Date: 2026-05-05 15:45:00
+- Revision ID: a1b2c3d4e5f6
+- Revises:
+    Create Date: 2026-05-05 15:45:00
 """
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -19,9 +17,9 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def upgrade() -> None:
+def upgrade():
     """Apply the migration."""
-    # ── users ─────────────────────────────────────────────────────────────────
+    # ── users ───
     op.create_table(
         "users",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -44,7 +42,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("phone"),
     )
 
-    # ── sessions ──────────────────────────────────────────────────────────────
+    # ── sessions ───
     op.create_table(
         "sessions",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -58,7 +56,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", name="uq_sessions_user_id"),
     )
 
-    # ── audit_logs ────────────────────────────────────────────────────────────
+    # ── audit_logs ──
     op.create_table(
         "audit_logs",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -74,7 +72,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    # ── accounts ──────────────────────────────────────────────────────────────
+    # ── accounts ──
     op.create_table(
         "accounts",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -86,7 +84,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id"),
     )
 
-    # ── cards ─────────────────────────────────────────────────────────────────
+    # ── cards ──
     op.create_table(
         "cards",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -101,7 +99,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    # ── transactions ──────────────────────────────────────────────────────────
+    # ── transactions ──
     op.create_table(
         "transactions",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -165,7 +163,7 @@ def upgrade() -> None:
         ["status", "type"],
     )
 
-    # ── transaction_history ───────────────────────────────────────────────────
+    # ── transaction_history ──
     op.create_table(
         "transaction_history",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -186,7 +184,7 @@ def upgrade() -> None:
     )
 
 
-def downgrade() -> None:
+def downgrade():
     """Revert the migration."""
     op.drop_table("transaction_history")
     op.drop_index("ix_transactions_status_type", table_name="transactions")

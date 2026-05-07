@@ -3,13 +3,9 @@ Seed script: create the first admin user and their account.
 
 Run this once after running `alembic upgrade head` to create the initial
 admin user that can be used to test the backoffice endpoints.
-
 Usage:
     cd backend
     python scripts/seed_admin.py
-
-The script is idempotent — it skips creation if the email already exists.
-
 Environment:
     Reads DATABASE_URL from the .env file (same as the app).
 """
@@ -19,16 +15,14 @@ import os
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-# Load settings (reads .env automatically)
 from app.core.config import settings
 from app.core.security import hash_password
 from app.models.account import Account
 from app.models.user import User, UserRole
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# ── Admin user details ────────────────────────────────────────────────────────
+# ── Admin user details ──
 # Change these values before running in a shared environment.
 ADMIN_EMAIL = "admin@bankdev.local"
 ADMIN_NAME = "Dev Admin"
@@ -41,7 +35,7 @@ _DEV_DEFAULT_PASSWORD = "change-me-before-production"  # noqa: S105
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", _DEV_DEFAULT_PASSWORD)
 
 
-async def seed(session: AsyncSession) -> None:
+async def seed(session: AsyncSession):
     """
     Insert the admin user and account if they do not already exist.
 
@@ -88,7 +82,7 @@ async def seed(session: AsyncSession) -> None:
     )
 
 
-async def main() -> None:
+async def main():
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
