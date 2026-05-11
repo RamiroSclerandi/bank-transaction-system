@@ -32,8 +32,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://bank_user:bank_password@db:5432/bank_transactions
       - SQS_INTERNATIONAL_QUEUE_URL=${SQS_INTERNATIONAL_QUEUE_URL:-}
       - AWS_REGION=${AWS_REGION:-eu-west-1}
-      - INTERNAL_SERVICE_API_KEY=${INTERNAL_SERVICE_API_KEY:-dev-internal-key}
-      - PAN_HMAC_KEY=${PAN_HMAC_KEY:-dev-pan-hmac-key-change-in-production}
+      - INTERNAL_SERVICE_API_KEY=${INTERNAL_SERVICE_API_KEY}
+      - PAN_HMAC_KEY=${PAN_HMAC_KEY}
       - ALLOWED_ORIGINS_RAW=${ALLOWED_ORIGINS_RAW:-http://localhost:3000,http://localhost:5173}
       - DEBUG=true
       - ENVIRONMENT=development

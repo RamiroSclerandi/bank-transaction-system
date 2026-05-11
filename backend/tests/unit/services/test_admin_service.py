@@ -93,3 +93,21 @@ class TestListTransactionsAdmin:
 
         assert result == []
         mock_crud_tx.list_filtered.assert_awaited_once_with(mock_db, filters=filters)
+
+    @pytest.mark.asyncio
+    @patch("app.services.transaction_service.crud_transaction")
+    async def test_passes_user_id_filter_to_crud(
+        self,
+        mock_crud_tx: MagicMock,
+        mock_db: AsyncMock,
+    ):
+        """When user_id is provided it must be forwarded
+        to crud_transaction.list_filtered."""
+        target_user_id = uuid.uuid4()
+        filters = TransactionListFilters(user_id=target_user_id, limit=10, offset=0)
+        mock_crud_tx.list_filtered = AsyncMock(return_value=[])
+
+        await transaction_service.list_transactions_admin(db=mock_db, filters=filters)
+
+        called_filters = mock_crud_tx.list_filtered.call_args.kwargs["filters"]
+        assert called_filters.user_id == target_user_id
