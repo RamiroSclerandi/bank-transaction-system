@@ -11,14 +11,12 @@ in the admin_auth endpoints (POST /admin/auth/login, POST /admin/auth/logout).
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query
 
-from app.crud.user import crud_user
 from app.deps import AdminDep, DbDep
 from app.models.transaction import TransactionStatus, TransactionType
 from app.schemas.transaction import TransactionListFilters, TransactionRead
-from app.schemas.user import AdminUserCreate, UserReadAdmin
-from app.services import admin_service
+from app.services import transaction_service
 
 router = APIRouter(prefix="/admin", tags=["admin-functions"])
 
@@ -31,6 +29,7 @@ router = APIRouter(prefix="/admin", tags=["admin-functions"])
 async def list_transactions(
     db: DbDep,
     current_user: AdminDep,
+    user_id: uuid.UUID | None = Query(default=None),
     account_id: uuid.UUID | None = Query(default=None),
     tx_status: str | None = Query(default=None, alias="status"),
     tx_type: str | None = Query(default=None, alias="type"),
@@ -46,6 +45,7 @@ async def list_transactions(
     ----
         db: Injected database session.
         current_user: Authenticated admin user.
+        user_id: Filter by user ID (resolved to the user's account). Defaults to None.
         account_id: Filter by account ID. Defaults to None.
         tx_status: Filter by transaction status. Defaults to None.
         tx_type: Filter by transaction type. Defaults to None.
@@ -60,6 +60,7 @@ async def list_transactions(
 
     """
     filters = TransactionListFilters(
+        user_id=user_id,
         account_id=account_id,
         status=TransactionStatus(tx_status) if tx_status else None,
         type=TransactionType(tx_type) if tx_type else None,
@@ -68,7 +69,9 @@ async def list_transactions(
         limit=limit,
         offset=offset,
     )
-    transactions = await admin_service.list_transactions(db=db, filters=filters)
+    transactions = await transaction_service.list_transactions_admin(
+        db=db, filters=filters
+    )
     return [TransactionRead.model_validate(t) for t in transactions]
 
 
@@ -96,50 +99,7 @@ async def get_transaction_admin(
         TransactionRead: The transaction matching the given ID.
 
     """
-    transaction = await admin_service.get_transaction(
+    transaction = await transaction_service.get_transaction_admin(
         db=db, transaction_id=transaction_id
     )
     return TransactionRead.model_validate(transaction)
-
-
-@router.post(
-    "/users",
-    response_model=UserReadAdmin,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new admin user (admin only)",
-)
-async def create_admin_user(
-    body: AdminUserCreate,
-    db: DbDep,
-    current_user: AdminDep,
-) -> UserReadAdmin:
-    """
-    Create a new backoffice admin user.
-
-    Only an existing authenticated admin can create other admins.
-    Returns 409 if the email is already registered.
-
-    Args:
-    ----
-        body: New admin user data including plain-text password (will be hashed).
-        db: Injected database session.
-        current_user: The authenticated admin performing the action.
-
-    Returns:
-    -------
-        The newly created admin user (PII included — admin-only route).
-
-    Raises:
-    ------
-        HTTPException: 409 if the email is already in use.
-
-    """
-    existing = await crud_user.get_by_email(db, email=body.email)
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists.",
-        )
-    async with db.begin():
-        user = await crud_user.create_admin(db, data=body)
-    return UserReadAdmin.model_validate(user)

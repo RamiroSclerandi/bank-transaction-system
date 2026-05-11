@@ -6,8 +6,12 @@ Configures rotating file logs (max 10 MB, keep last 5 files).
 
 import re
 import sys
+from typing import TYPE_CHECKING
 
-from loguru import Record, logger
+from loguru import logger
+
+if TYPE_CHECKING:
+    from loguru import Record
 
 # Patterns to detect and mask PII in log messages
 _PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
@@ -22,7 +26,7 @@ _PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def _mask_pii(record: Record) -> bool:
+def _mask_pii(record: "Record") -> bool:
     """
     Mutate the log record to redact any detected PII.
 

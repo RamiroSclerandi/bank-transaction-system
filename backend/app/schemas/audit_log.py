@@ -3,7 +3,8 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+from utils.validators import EmailStr
 
 from app.models.audit_log import AuditLogAction
 

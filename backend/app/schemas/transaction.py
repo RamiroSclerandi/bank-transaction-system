@@ -94,6 +94,7 @@ class TransactionRead(BaseModel):
 class TransactionListFilters(BaseModel):
     """Query parameters for filtering the admin transaction list."""
 
+    user_id: uuid.UUID | None = None
     account_id: uuid.UUID | None = None
     status: TransactionStatus | None = None
     type: TransactionType | None = None

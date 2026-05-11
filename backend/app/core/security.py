@@ -4,14 +4,14 @@ primitives used by the self-managed auth system:
   - bcrypt for password hashing/verification (via passlib)
   - secrets.token_urlsafe for opaque session token generation
   - SHA-256 for storing a safe digest of the session token in the DB
+  - HMAC-SHA256 for tokenising card PANs (PCI DSS compliant lookup)
 """
 
 import hashlib
+import hmac
 import secrets
 
-from passlib.context import CryptContext
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 
 def hash_password(plain: str) -> str:
@@ -27,7 +27,7 @@ def hash_password(plain: str) -> str:
         A bcrypt hash string suitable for storage in the database.
 
     """
-    return str(_pwd_context.hash(plain))
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -44,7 +44,10 @@ def verify_password(plain: str, hashed: str) -> bool:
         True if the password matches, False otherwise.
 
     """
-    return bool(_pwd_context.verify(plain, hashed))
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        return False
 
 
 def generate_session_token() -> str:
@@ -75,3 +78,24 @@ def hash_session_token(token: str) -> str:
 
     """
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def hmac_pan(number: str, key: str) -> str:
+    """
+    Return the HMAC-SHA256 hex digest of a card PAN for safe DB storage.
+    The raw PAN is never persisted; only this digest is stored and used
+    for lookup (get-or-create semantics on transaction creation).
+
+    Args:
+    ----
+        number: Card number in XXXX-XXXX-XXXX-XXXX format (digits + hyphens).
+        key: The PAN_HMAC_KEY secret from application settings.
+
+    Returns:
+    -------
+        64-character lowercase hex string (HMAC-SHA256 digest).
+
+    """
+    # Normalise: strip hyphens so formatting differences don't create duplicates
+    digits = number.replace("-", "")
+    return hmac.new(key.encode(), digits.encode(), hashlib.sha256).hexdigest()
