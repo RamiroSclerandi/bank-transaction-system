@@ -8,8 +8,8 @@ import uuid
 from fastapi import APIRouter, status
 
 from app.deps import DbDep, InternalAuthDep
-from app.schemas.transaction import TransactionRead, WebhookUpdate
-from app.services import transaction_service
+from app.schemas.transaction import TransactionRead
+from app.services import archive_service, backup_service, transaction_service
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -55,44 +55,51 @@ async def process_scheduled(
 
 
 @router.post(
-    "/transactions/{transaction_id}/webhook",
-    response_model=TransactionRead,
+    "/jobs/archive-transactions",
     status_code=status.HTTP_200_OK,
-    summary="Receive status update from external payment processor",
+    summary="Copy completed/failed transactions to history table (Lambda worker only)",
 )
-async def payment_webhook(
-    transaction_id: uuid.UUID,
-    payload: WebhookUpdate,
+async def run_archive_transactions(
     db: DbDep,
     _auth: InternalAuthDep,
-) -> TransactionRead:
+) -> dict[str, int]:
     """
-    Update a pending international transaction to completed or failed.
-    Called by the External International Payment Processor after it has
-    finished processing the transaction. Only terminal statuses are accepted
-    (completed or failed). The status field validator on WebhookUpdate enforces
-    this at the Pydantic layer.
+    Idempotent copy of completed/failed transactions into the transaction_history
+    data warehouse table. Called by the daily EventBridge Lambda.
 
     Args:
     ----
-        transaction_id: UUID of the international transaction to update.
-        payload: Webhook payload with the final status.
         db: Injected database session.
         _auth: Internal API key validation.
 
     Returns:
     -------
-        The updated transaction resource.
-
-    Raises:
-    ------
-        HTTPException: 404 if the transaction does not exist.
-        HTTPException: 409 if the transaction is not currently 'pending'.
+        ``{"rows_archived": N}`` — number of rows copied in this invocation.
 
     """
-    transaction = await transaction_service.handle_payment_webhook(
-        transaction_id=transaction_id,
-        payload=payload,
-        db=db,
-    )
-    return TransactionRead.model_validate(transaction)
+    rows_archived = await archive_service.copy_transactions_to_history(db=db)
+    return {"rows_archived": rows_archived}
+
+
+@router.post(
+    "/jobs/daily-backup",
+    status_code=status.HTTP_200_OK,
+    summary="Trigger daily RDS snapshot or pg_dump backup (Lambda worker only)",
+)
+async def run_daily_backup(
+    _auth: InternalAuthDep,
+) -> dict[str, str]:
+    """
+    Trigger the daily database backup. In development, runs pg_dump and saves
+    to db_backups/. In production, triggers an AWS RDS snapshot via boto3.
+
+    Args:
+    ----
+        _auth: Internal API key validation.
+
+    Returns:
+    -------
+        ``{"snapshot_id": ..., "status": ...}`` — snapshot name and AWS/local status.
+
+    """
+    return await backup_service.execute_daily_backup()

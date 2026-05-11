@@ -70,6 +70,10 @@ def debit_card(account: Account) -> Card:
         id=uuid.uuid4(),
         account_id=account.id,
         card_type=CardType.debit,
+        number_hmac="a" * 64,
+        number_last4="1111",
+        expiration_month=12,
+        expiration_year=30,
     )
     card.account = account
     return card
@@ -82,6 +86,10 @@ def credit_card(account: Account) -> Card:
         id=uuid.uuid4(),
         account_id=account.id,
         card_type=CardType.credit,
+        number_hmac="b" * 64,
+        number_last4="0004",
+        expiration_month=12,
+        expiration_year=30,
     )
     card.account = account
     return card
@@ -166,6 +174,62 @@ def make_transaction() -> Callable[..., MagicMock]:
         return tx
 
     return _make
+
+
+# ── Transaction service CRUD patches ──
+# Patch settings so PAN_HMAC_KEY is available without a real .env in tests.
+_MOCK_PAN_HMAC_KEY = "test-hmac-key"
+
+
+@pytest.fixture(autouse=True)
+def patch_settings_pan_hmac_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure PAN_HMAC_KEY is set for all tests without a real .env in CI."""
+    monkeypatch.setattr(
+        "app.services.transaction_service.settings",
+        MagicMock(PAN_HMAC_KEY=_MOCK_PAN_HMAC_KEY),
+    )
+
+
+@pytest.fixture
+def mock_crud_card(debit_card: Card) -> Generator[MagicMock, None, None]:
+    """Patch crud_card pre-configured to return debit_card on get_by_hmac."""
+    with patch("app.services.transaction_service.crud_card") as mock:
+        mock.get_by_hmac = AsyncMock(return_value=debit_card)
+        yield mock
+
+
+@pytest.fixture
+def mock_crud_card_credit(credit_card: Card) -> Generator[MagicMock, None, None]:
+    """Patch crud_card pre-configured to return credit_card on get_by_hmac."""
+    with patch("app.services.transaction_service.crud_card") as mock:
+        mock.get_by_hmac = AsyncMock(return_value=credit_card)
+        yield mock
+
+
+@pytest.fixture
+def mock_crud_tx() -> Generator[MagicMock, None, None]:
+    """Patch crud_transaction; individual tests configure method return values."""
+    with patch("app.services.transaction_service.crud_transaction") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_crud_account(account: Account) -> Generator[MagicMock, None, None]:
+    """Patch crud_account pre-configured with get_with_lock and deduct_balance."""
+    with patch("app.services.transaction_service.crud_account") as mock:
+        mock.get_with_lock = AsyncMock(return_value=account)
+        mock.deduct_balance = AsyncMock()
+        yield mock
+
+
+@pytest.fixture
+def mock_sqs() -> Generator[AsyncMock, None, None]:
+    """Patch sqs_service.publish_international_payment with an AsyncMock."""
+    with patch(
+        "app.services.transaction_service.sqs_service.publish_international_payment",
+        new_callable=AsyncMock,
+    ) as mock:
+        yield mock
 
 
 # ── Auth service CRUD patches ──

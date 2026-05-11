@@ -35,11 +35,22 @@ class Settings(BaseSettings):
     # -- AWS General --
     AWS_REGION: str = "eu-west-1"
 
+    # -- AWS RDS --
+    AWS_RDS_INSTANCE_IDENTIFIER: str = ""
+
     # -- AWS SQS (required in production) --
-    SQS_INTERNATIONAL_QUEUE_URL: str | None = None
+    SQS_INTERNATIONAL_QUEUE_URL: str
+
+    # -- AWS IAM User --
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
 
     # -- Internal Service Auth --
     INTERNAL_SERVICE_API_KEY: str
+
+    # -- Card PAN hashing --
+    # HMAC-SHA256 key used to hash card numbers for lookup.
+    PAN_HMAC_KEY: str
 
     # -- CORS --
     # Accepts a JSON array ('["http://..."]') or comma-separated values.

@@ -17,12 +17,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.security import hmac_pan
 from app.crud.account import crud_account
 from app.crud.card import crud_card
 from app.crud.transaction import crud_transaction
+from app.models.card import Card
 from app.models.transaction import (
     Transaction,
     TransactionMethod,
@@ -30,12 +33,86 @@ from app.models.transaction import (
     TransactionType,
 )
 from app.models.user import User
+from app.schemas.card import CardInput
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionListFilters,
-    WebhookUpdate,
 )
 from app.services import sqs_service
+
+
+async def _resolve_card(
+    db: AsyncSession,
+    *,
+    card_input: CardInput,
+    current_user: User,
+) -> Card:
+    """
+    Resolve a card for the current user using get-or-create semantics.
+
+    1. Compute HMAC-SHA256 of the PAN and look up the card by digest.
+    2. If found, verify it belongs to the current user's account.
+    3. If not found, create it under the user's account.
+
+    A concurrent INSERT race on the unique `number_hmac` column is handled by
+    catching IntegrityError, rolling back, and re-fetching.
+
+    Args:
+    ----
+        db: Active async database session.
+        card_input: Validated card details from the transaction payload.
+        current_user: Authenticated customer.
+
+    Returns:
+    -------
+        The resolved or newly created Card instance.
+
+    Raises:
+    ------
+        HTTPException: 403 if the card exists but belongs to a different user.
+        HTTPException: 404 if the user's account is not found.
+
+    """
+    pan_hmac = hmac_pan(card_input.number, settings.PAN_HMAC_KEY)
+    last4 = card_input.number.replace("-", "")[-4:]
+
+    try:
+        async with db.begin():
+            card = await crud_card.get_by_hmac(db, number_hmac=pan_hmac)
+            if card is not None:
+                if card.account.user_id != current_user.id:  # type: ignore[union-attr]
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Card does not belong to the authenticated user.",
+                    )
+                return card
+
+            account = await crud_account.get_by_user(db, user_id=current_user.id)
+            if account is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User account not found.",
+                )
+
+            card = await crud_card.create(
+                db,
+                account_id=account.id,
+                card_type=card_input.card_type,
+                number_hmac=pan_hmac,
+                number_last4=last4,
+                expiration_month=card_input.expiration_month,
+                expiration_year=card_input.expiration_year,
+            )
+    except IntegrityError:
+        # Concurrent request created the same card — re-fetch it
+        card = await crud_card.get_by_hmac(db, number_hmac=pan_hmac)
+        if card is None or card.account.user_id != current_user.id:  # type: ignore[union-attr]
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Card does not belong to the authenticated user.",
+            )
+
+    return card  # type: ignore[return-value]
 
 
 async def create_transaction(
@@ -63,29 +140,29 @@ async def create_transaction(
         HTTPException: 409 if a reversal target transaction is not found.
 
     """
-    # 1. Verify card exists and belongs to the current user
-    card = await crud_card.get(db, card_id=payload.source_card)
-    if card is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Card not found."
-        )
-    if card.account.user_id != current_user.id:  # type: ignore[union-attr]
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Card does not belong to the authenticated user.",
-        )
+    # 1. Resolve card (get-or-create by number) and verify ownership
+    card = await _resolve_card(db, card_input=payload.card, current_user=current_user)
 
     origin_account_id = card.account_id
     method = TransactionMethod(card.card_type.value)
     now = datetime.now(tz=UTC).replace(tzinfo=None)
 
-    # 2. Apply the processing decision tree
+    # 2. Validate reversal target and apply the processing decision tree — single
+    # transaction so no autobegin is active before the explicit db.begin() call.
     async with db.begin():
-        # Branch A: Scheduled transaction
+        if payload.reversal_of is not None:
+            original = await crud_transaction.get(
+                db, transaction_id=payload.reversal_of
+            )
+            if original is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Original transaction '{payload.reversal_of}' not found.",
+                )
         if payload.scheduled_for and payload.scheduled_for > now:
             return await crud_transaction.create(
                 db,
-                source_card=payload.source_card,
+                source_card=card.id,
                 origin_account=origin_account_id,
                 destination_account=payload.destination_account,
                 amount=payload.amount,
@@ -100,7 +177,7 @@ async def create_transaction(
         if payload.type == TransactionType.international:
             transaction = await crud_transaction.create(
                 db,
-                source_card=payload.source_card,
+                source_card=card.id,
                 origin_account=origin_account_id,
                 destination_account=payload.destination_account,
                 amount=payload.amount,
@@ -116,7 +193,7 @@ async def create_transaction(
         # Branch C: National payment
         return await _process_national(
             db=db,
-            source_card=payload.source_card,
+            source_card=card.id,
             origin_account_id=origin_account_id,
             destination_account=payload.destination_account,
             amount=payload.amount,
@@ -149,14 +226,16 @@ async def process_scheduled_transaction(
         HTTPException: 409 if the transaction is already being processed
 
     """
-    transaction = await crud_transaction.get(db, transaction_id=transaction_id)
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found."
-        )
-
     # Optimistic lock: claim the row from 'scheduled' → 'processing'
+    # The initial get() is inside the same db.begin() to avoid triggering autobegin
+    # before the explicit transaction start.
     async with db.begin():
+        transaction = await crud_transaction.get(db, transaction_id=transaction_id)
+        if transaction is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found."
+            )
+
         claimed = await crud_transaction.update_status(
             db,
             transaction_id=transaction_id,
@@ -190,63 +269,6 @@ async def process_scheduled_transaction(
                 existing_transaction_id=transaction_id,
             )
 
-    await db.refresh(transaction)
-    return transaction
-
-
-async def handle_payment_webhook(
-    transaction_id: uuid.UUID,
-    payload: WebhookUpdate,
-    db: AsyncSession,
-) -> Transaction:
-    """
-    Update a pending international transaction from the external processor.
-    Called via the internal webhook endpoint. Only transitions allowed are
-    pending → completed or pending → failed.
-
-    Args:
-    ----
-        transaction_id: UUID of the transaction to update.
-        payload: Webhook payload containing the final status.
-        db: Active async database session.
-
-    Returns:
-    -------
-        The updated Transaction instance.
-
-    Raises:
-    ------
-        HTTPException: 404 if the transaction is not found.
-        HTTPException: 409 if the transaction is not in 'pending' status.
-
-    """
-    transaction = await crud_transaction.get(db, transaction_id=transaction_id)
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found."
-        )
-
-    async with db.begin():
-        updated = await crud_transaction.update_status(
-            db,
-            transaction_id=transaction_id,
-            new_status=payload.status,
-            expected_current_status=TransactionStatus.pending,
-        )
-        if not updated:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Transaction is not in 'pending' status "
-                    f"(current: {transaction.status.value})."
-                ),
-            )
-
-    logger.info(
-        "Webhook updated transaction {tx_id} to {new_status}",
-        tx_id=transaction_id,
-        new_status=payload.status.value,
-    )
     await db.refresh(transaction)
     return transaction
 
