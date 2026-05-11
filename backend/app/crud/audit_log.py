@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.audit_log import AuditLog, AuditLogAction, UserSession
+from app.models.audit_log import (
+    AuditLog,
+    AuditLogAction,
+    SessionEvent,
+    SessionHistory,
+    UserSession,
+)
 
 
 class CRUDAuditLog:
@@ -91,7 +97,7 @@ class CRUDUserSession:
                     "token_hash": token_hash,
                     "expires_at": expires_at,
                     "ip_address": ip_address,
-                    "created_at": datetime.now(tz=UTC),
+                    "created_at": datetime.now(tz=UTC).replace(tzinfo=None),
                 },
             )
         )
@@ -169,3 +175,46 @@ class CRUDUserSession:
 
 crud_audit_log = CRUDAuditLog()
 crud_user_session = CRUDUserSession()
+
+
+class CRUDSessionHistory:
+    """Data access layer for SessionHistory — append-only."""
+
+    async def create(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: uuid.UUID,
+        event: SessionEvent,
+        token_hash: str,
+        ip_address: str | None = None,
+    ) -> SessionHistory:
+        """
+        Append a session lifecycle event to the history table.
+
+        Args:
+        ----
+            db: Active async database session.
+            user_id: The user whose session changed.
+            event: login | logout | expired.
+            token_hash: SHA-256 of the session token for cross-system correlation.
+            ip_address: Client IP at the time of the event (nullable for expiry).
+
+        Returns:
+        -------
+            The newly created SessionHistory instance.
+
+        """
+        entry = SessionHistory(
+            user_id=user_id,
+            event=event,
+            token_hash=token_hash,
+            ip_address=ip_address,
+        )
+        db.add(entry)
+        await db.flush()
+        await db.refresh(entry)
+        return entry
+
+
+crud_session_history = CRUDSessionHistory()

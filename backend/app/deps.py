@@ -10,22 +10,51 @@ Dependency hierarchy:
 """
 
 import hmac
+import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import BackgroundTasks, Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import hash_session_token
-from app.crud.audit_log import crud_user_session
+from app.crud.audit_log import crud_session_history, crud_user_session
 from app.crud.user import crud_user
 from app.db.session import AsyncSessionLocal
+from app.models.audit_log import SessionEvent
 from app.models.user import User, UserRole
 
 _bearer = HTTPBearer(auto_error=True)
+
+
+async def _cleanup_expired_session(user_id: uuid.UUID) -> None:
+    """
+    Fire-and-forget background task: delete an expired session row and
+    record a SessionHistory entry with event=expired.
+    Opens its own DB session so it can run after the request session is closed.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            async with db.begin():
+                session = await crud_user_session.get_by_user_id(db, user_id=user_id)
+                token_hash = session.token_hash if session is not None else ""
+                await crud_user_session.delete(db, user_id=user_id)
+                await crud_session_history.create(
+                    db,
+                    user_id=user_id,
+                    event=SessionEvent.expired,
+                    token_hash=token_hash,
+                    ip_address=None,
+                )
+    except Exception:
+        logger.exception(
+            "Background cleanup failed for expired session (user_id={user_id})",
+            user_id=user_id,
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -43,6 +72,7 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     db: DbDep,
+    background_tasks: BackgroundTasks,
 ) -> User:
     """
     Dependency: resolve and validate a session-based request.
@@ -53,6 +83,7 @@ async def get_current_user(
     ----
         credentials: Bearer credentials from the Authorization header.
         db: Injected database session.
+        background_tasks: FastAPI BackgroundTasks for post-response cleanup.
 
     Returns:
     -------
@@ -75,6 +106,7 @@ async def get_current_user(
 
     now = datetime.now(tz=UTC).replace(tzinfo=None)
     if session.expires_at < now:
+        background_tasks.add_task(_cleanup_expired_session, session.user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired. Please log in again.",
@@ -88,6 +120,8 @@ async def get_current_user(
             detail="User not found.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # End the implicit read-only transaction opened by autobegin so the service
+    await db.commit()
     return user
 
 
@@ -122,7 +156,7 @@ async def get_current_admin(
     if user.role != UserRole.admin:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin user not found.",
+            detail="Admin privileges required",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

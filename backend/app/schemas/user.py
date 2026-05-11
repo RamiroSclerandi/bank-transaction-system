@@ -1,12 +1,25 @@
 """Pydantic schemas for User resources."""
 
+import ipaddress
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, field_validator
+from utils.validators import EmailStr
 
 from app.models.user import UserRole
 from app.schemas.account import AccountRead
+
+
+def _validate_ip(v: str | None) -> str | None:
+    """Validate that the value is a valid IPv4 or IPv6 address."""
+    if v is None:
+        return v
+    try:
+        ipaddress.ip_address(v)
+    except ValueError:
+        raise ValueError(f"'{v}' is not a valid IP address")
+    return v
 
 
 class UserBase(BaseModel):
@@ -62,6 +75,10 @@ class AdminUserCreate(BaseModel):
         ),
     )
 
+    _validate_registered_ip = field_validator("registered_ip", mode="before")(
+        _validate_ip
+    )
+
 
 class UserReadCustomer(BaseModel):
     """Public-facing schema for customer responses."""
@@ -93,18 +110,19 @@ class CustomerUserCreate(BaseModel):
         ),
     )
 
+    _validate_registered_ip = field_validator("registered_ip", mode="before")(
+        _validate_ip
+    )
+
 
 class CustomerRegistrationResponse(BaseModel):
     """
     Returned after a successful POST /auth/register.
-    Includes the created user, the associated bank account, the session token,
-    and its expiry time so the client can start making authenticated requests
-    immediately without a separate login step.
+    Includes the created user and the associated bank account.
+    A session token is obtained separately via POST /auth/login.
     """
 
     user: UserReadCustomer
     account: AccountRead
-    session_token: str
-    expires_at: datetime
 
     model_config = {"from_attributes": True}

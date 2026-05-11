@@ -4,7 +4,13 @@ SQLAlchemy metadata, which Alembic needs to auto-generate migration scripts.
 """
 
 from app.models.account import Account
-from app.models.audit_log import AuditLog, AuditLogAction, UserSession
+from app.models.audit_log import (
+    AuditLog,
+    AuditLogAction,
+    SessionEvent,
+    SessionHistory,
+    UserSession,
+)
 from app.models.card import Card, CardType
 from app.models.transaction import (
     Transaction,
@@ -21,6 +27,8 @@ __all__ = [
     "AuditLogAction",
     "Card",
     "CardType",
+    "SessionEvent",
+    "SessionHistory",
     "Transaction",
     "TransactionHistory",
     "TransactionMethod",

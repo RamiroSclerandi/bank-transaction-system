@@ -3,7 +3,6 @@ Tests for user_service: customer registration and admin user creation.
 """
 
 import uuid
-from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,9 +12,8 @@ from app.schemas.user import AdminUserCreate, CustomerUserCreate
 from app.services import user_service
 from fastapi import HTTPException
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
-
+# ── Helpers ───
 def _make_account(user_id: uuid.UUID) -> MagicMock:
     account = MagicMock(spec=Account)
     account.id = uuid.uuid4()
@@ -50,53 +48,35 @@ def _make_admin_payload(**overrides: object) -> AdminUserCreate:
     return AdminUserCreate(**defaults)  # type: ignore[arg-type]
 
 
-# ── TestRegisterCustomer ──────────────────────────────────────────────────────
-
-
+# ── TestRegisterCustomer ──
 class TestRegisterCustomer:
     """Tests for user_service.register_customer."""
 
     @pytest.mark.asyncio
-    @patch("app.services.user_service.crud_user_session")
     @patch("app.services.user_service.crud_account")
     @patch("app.services.user_service.crud_user")
-    async def test_creates_user_account_and_session(
+    async def test_creates_user_and_account(
         self,
         mock_crud_user: MagicMock,
         mock_crud_account: MagicMock,
-        mock_session_crud: MagicMock,
         customer_user: User,
         mock_db: AsyncMock,
-        mock_request: Callable[..., MagicMock],
-        make_session: Callable[..., MagicMock],
     ):
-        """Successful registration returns user, account, session, and raw token."""
+        """Successful registration returns user and account (no session)."""
         account = _make_account(customer_user.id)
-        session = make_session(customer_user.id)
         payload = _make_customer_payload()
-        request = mock_request()
         mock_crud_user.get_by_email = AsyncMock(return_value=None)
         mock_crud_user.create_customer = AsyncMock(return_value=customer_user)
         mock_crud_account.create = AsyncMock(return_value=account)
-        mock_session_crud.upsert = AsyncMock()
-        mock_session_crud.get_by_user_id = AsyncMock(return_value=session)
 
-        (
-            result_user,
-            result_account,
-            result_session,
-            raw_token,
-        ) = await user_service.register_customer(
-            db=mock_db, request=request, data=payload
+        result_user, result_account = await user_service.register_customer(
+            db=mock_db, data=payload
         )
 
         assert result_user is customer_user
         assert result_account is account
-        assert result_session is session
-        assert isinstance(raw_token, str) and len(raw_token) > 0
         mock_crud_user.create_customer.assert_awaited_once()
         mock_crud_account.create.assert_awaited_once()
-        mock_session_crud.upsert.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch("app.services.user_service.crud_account")
@@ -107,26 +87,20 @@ class TestRegisterCustomer:
         mock_crud_account: MagicMock,
         customer_user: User,
         mock_db: AsyncMock,
-        mock_request: Callable[..., MagicMock],
     ):
         """If the email is already registered, a 409 is raised before any insert."""
         payload = _make_customer_payload()
-        request = mock_request()
         mock_crud_user.get_by_email = AsyncMock(return_value=customer_user)
         mock_crud_account.create = AsyncMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await user_service.register_customer(
-                db=mock_db, request=request, data=payload
-            )
+            await user_service.register_customer(db=mock_db, data=payload)
 
         assert exc_info.value.status_code == 409
         mock_crud_account.create.assert_not_awaited()
 
 
-# ── TestCreateAdmin ───────────────────────────────────────────────────────────
-
-
+# ── TestCreateAdmin ──
 class TestCreateAdmin:
     """Tests for user_service.create_admin."""
 

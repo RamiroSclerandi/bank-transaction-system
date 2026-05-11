@@ -15,12 +15,12 @@ from app.core.security import (
     hash_session_token,
     verify_password,
 )
-from app.crud.audit_log import crud_audit_log, crud_user_session
+from app.crud.audit_log import crud_audit_log, crud_session_history, crud_user_session
 from app.crud.user import crud_user
-from app.models.audit_log import AuditLogAction, UserSession
+from app.models.audit_log import AuditLogAction, SessionEvent, UserSession
 from app.models.user import User, UserRole
 
-_SESSION_TTL_HOURS = 1
+_SESSION_TTL_MINUTES = 15
 
 
 # Private Helper
@@ -106,17 +106,22 @@ async def login(
         HTTPException: 403 if the request IP does not match user.registered_ip.
 
     """
-    user = await authenticate_user(db, email=email, password=password, role=role)
     ip = _extract_ip(request)
 
-    if user.registered_ip and ip != user.registered_ip:
-        async with db.begin():
+    # Authenticate and optionally record a failed-IP audit — all inside one transaction
+    # so there is no implicit autobegin active when the next db.begin() is called.
+    async with db.begin():
+        user = await authenticate_user(db, email=email, password=password, role=role)
+        ip_blocked = bool(user.registered_ip and ip != user.registered_ip)
+        if ip_blocked:
             await crud_audit_log.create(
                 db,
                 user_id=user.id,
                 action=AuditLogAction.login_failed,
                 ip_address=ip,
             )
+    # Transaction committed; raise outside so the failed-login audit is persisted.
+    if ip_blocked:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Login rejected: request IP does not match the registered IP.",
@@ -125,7 +130,7 @@ async def login(
     raw_token = generate_session_token()
     token_hash = hash_session_token(raw_token)
     expires_at = datetime.now(tz=UTC).replace(tzinfo=None) + timedelta(
-        hours=_SESSION_TTL_HOURS
+        minutes=_SESSION_TTL_MINUTES
     )
 
     async with db.begin():
@@ -139,9 +144,20 @@ async def login(
             expires_at=expires_at,
             ip_address=ip,
         )
+        await crud_session_history.create(
+            db,
+            user_id=user.id,
+            event=SessionEvent.login,
+            token_hash=token_hash,
+            ip_address=ip,
+        )
+        session = await crud_user_session.get_by_user_id(db, user_id=user.id)
 
-    session = await crud_user_session.get_by_user_id(db, user_id=user.id)
-    assert session is not None  # noqa: S101 — we just upserted it
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session could not be retrieved after creation.",
+        )
     return session, raw_token
 
 
@@ -162,7 +178,16 @@ async def logout(
     """
     ip = _extract_ip(request)
     async with db.begin():
+        session = await crud_user_session.get_by_user_id(db, user_id=user.id)
+        token_hash = session.token_hash if session is not None else ""
         await crud_audit_log.create(
             db, user_id=user.id, action=AuditLogAction.logout, ip_address=ip
         )
         await crud_user_session.delete(db, user_id=user.id)
+        await crud_session_history.create(
+            db,
+            user_id=user.id,
+            event=SessionEvent.logout,
+            token_hash=token_hash,
+            ip_address=ip,
+        )

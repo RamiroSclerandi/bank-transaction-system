@@ -39,13 +39,15 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     registered_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(tz=UTC)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.now(tz=UTC),
-        onupdate=datetime.now(tz=UTC),
+        default=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
     )
 
     # Relationships
@@ -57,4 +59,7 @@ class User(Base):
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(  # type: ignore[name-defined]
         "AuditLog", back_populates="user"
+    )
+    session_history: Mapped[list["SessionHistory"]] = relationship(  # type: ignore[name-defined]
+        "SessionHistory", back_populates="user", cascade="all, delete-orphan"
     )

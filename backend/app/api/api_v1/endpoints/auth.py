@@ -1,17 +1,28 @@
 """
 Unified authentication endpoints for all user roles.
+  - POST /auth/register     — register a new customer
   - POST /auth/login        — customer login
   - POST /auth/logout       — customer logout
+  - POST /admin/auth/register — create a new admin user (admin-only)
   - POST /admin/auth/login  — admin login
   - POST /admin/auth/logout — admin logout
 """
 
 from fastapi import APIRouter, Request, status
 
+from app.core.rate_limit import limiter
 from app.deps import AdminDep, CustomerDep, DbDep
 from app.models.user import UserRole
+from app.schemas.account import AccountRead
 from app.schemas.audit_log import LoginRequest, LoginResponse
-from app.services import auth_service
+from app.schemas.user import (
+    AdminUserCreate,
+    CustomerRegistrationResponse,
+    CustomerUserCreate,
+    UserReadAdmin,
+    UserReadCustomer,
+)
+from app.services import auth_service, user_service
 
 customer_auth_router = APIRouter(prefix="/auth", tags=["customer-auth"])
 admin_auth_router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
@@ -19,11 +30,50 @@ admin_auth_router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
 
 # ── Customer ───
 @customer_auth_router.post(
+    "/register",
+    response_model=CustomerRegistrationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new customer",
+)
+@limiter.limit("5/minute")  # type: ignore[reportUntypedFunctionDecorator]
+async def customer_register(
+    body: CustomerUserCreate,
+    request: Request,
+    db: DbDep,
+) -> CustomerRegistrationResponse:
+    """
+    Create a new customer user and an associated bank account.
+    No session is created here — call POST /auth/login to obtain a token.
+
+    Args:
+    ----
+        body: Registration payload (personal data + password).
+        request: Incoming HTTP request.
+        db: Injected database session.
+
+    Returns:
+    -------
+        A CustomerRegistrationResponse with user data and account data.
+
+    Raises:
+    ------
+        HTTPException: 409 if the email is already registered.
+
+    """
+    user, account = await user_service.register_customer(db=db, data=body)
+    return CustomerRegistrationResponse(
+        user=UserReadCustomer.model_validate(user),
+        account=AccountRead.model_validate(account),
+    )
+
+
+@customer_auth_router.post(
     "/login",
     response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
     summary="Authenticate a customer and create a server-side session",
 )
+@limiter.limit("10/minute")  # type: ignore[reportUntypedFunctionDecorator]
 async def customer_login(
     body: LoginRequest,
     request: Request,
@@ -91,6 +141,7 @@ async def customer_logout(
     status_code=status.HTTP_200_OK,
     summary="Authenticate an admin user and create a server-side session",
 )
+@limiter.limit("5/minute")  # type: ignore[reportUntypedFunctionDecorator]
 async def admin_login(
     body: LoginRequest,
     request: Request,
@@ -148,3 +199,40 @@ async def admin_logout(
 
     """
     await auth_service.logout(db=db, request=request, user=current_user)
+
+
+@admin_auth_router.post(
+    "/register",
+    response_model=UserReadAdmin,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new admin user (admin-only)",
+)
+@limiter.limit("3/minute")  # type: ignore[reportUntypedFunctionDecorator]
+async def admin_register(
+    body: AdminUserCreate,
+    request: Request,
+    db: DbDep,
+    _current_admin: AdminDep,
+) -> UserReadAdmin:
+    """
+    Create a new admin user. Only accessible by authenticated admins.
+    No session is created — the new admin must call POST /admin/auth/login.
+
+    Args:
+    ----
+        body: New admin registration payload.
+        request: Incoming HTTP request (required by rate limiter).
+        db: Injected database session.
+        _current_admin: Authenticated admin (session validation only).
+
+    Returns:
+    -------
+        The newly created admin user.
+
+    Raises:
+    ------
+        HTTPException: 409 if the email is already registered.
+
+    """
+    user = await user_service.create_admin(db=db, data=body)
+    return UserReadAdmin.model_validate(user)

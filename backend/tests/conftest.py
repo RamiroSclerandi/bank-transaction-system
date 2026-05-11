@@ -1,10 +1,10 @@
 """Shared pytest fixtures for unit and integration tests."""
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.models.account import Account
@@ -91,6 +91,7 @@ def credit_card(account: Account) -> Card:
 def mock_db() -> AsyncMock:
     """Return a mock AsyncSession."""
     db = AsyncMock()
+    db.add = MagicMock()
     db.begin = MagicMock()
     db.begin.return_value.__aenter__ = AsyncMock(return_value=None)
     db.begin.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -165,3 +166,39 @@ def make_transaction() -> Callable[..., MagicMock]:
         return tx
 
     return _make
+
+
+# ── Auth service CRUD patches ──
+@pytest.fixture
+def mock_auth_crud_user() -> Generator[MagicMock, None, None]:
+    """Patch crud_user inside auth_service."""
+    with patch("app.services.auth_service.crud_user") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_auth_crud_user_session() -> Generator[MagicMock, None, None]:
+    """Patch crud_user_session inside auth_service."""
+    with patch("app.services.auth_service.crud_user_session") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_auth_crud_audit_log() -> Generator[MagicMock, None, None]:
+    """Patch crud_audit_log inside auth_service."""
+    with patch("app.services.auth_service.crud_audit_log") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_auth_crud_session_history() -> Generator[MagicMock, None, None]:
+    """Patch crud_session_history inside auth_service."""
+    with patch("app.services.auth_service.crud_session_history") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_auth_verify_password() -> Generator[MagicMock, None, None]:
+    """Patch verify_password inside auth_service; defaults to returning True."""
+    with patch("app.services.auth_service.verify_password", return_value=True) as mock:
+        yield mock
