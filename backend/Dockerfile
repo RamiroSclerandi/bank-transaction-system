@@ -11,8 +11,8 @@ RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml ./
-RUN uv sync --no-dev --no-install-project
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # ──────────────────────────────────────────────
 # Stage 2: Runtime

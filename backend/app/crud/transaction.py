@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.transaction import (
     Transaction,
     TransactionMethod,
@@ -186,6 +187,10 @@ class CRUDTransaction:
         """
         query = select(Transaction)
 
+        if filters.user_id:
+            query = query.join(Account, Transaction.origin_account == Account.id).where(
+                Account.user_id == filters.user_id
+            )
         if filters.account_id:
             query = query.where(Transaction.origin_account == filters.account_id)
         if filters.status:
