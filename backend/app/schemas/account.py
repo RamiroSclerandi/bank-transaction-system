@@ -18,8 +18,8 @@ class AccountRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AccountTopUp(BaseModel):
-    """Payload for POST /accounts/top-up — credit balance to the customer's account."""
+class AccountAddBalance(BaseModel):
+    """Payload for POST /accounts/add-balance — adds balance to the user's account."""
 
     amount: Decimal = Field(
         ...,
@@ -30,8 +30,8 @@ class AccountTopUp(BaseModel):
 
 
 class AdminAccountCreate(BaseModel):
-    """Payload for POST /admin/accounts — create a bank account for a customer user."""
+    """Payload for POST /admin/accounts — create a bank account for a user."""
 
     user_id: uuid.UUID = Field(
-        ..., description="UUID of the customer user to create an account for."
+        ..., description="UUID of the user to create an account for."
     )

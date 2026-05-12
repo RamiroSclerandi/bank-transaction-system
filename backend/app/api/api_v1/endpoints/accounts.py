@@ -14,8 +14,8 @@ from app.crud.account import crud_account
 from app.crud.user import crud_user
 from app.deps import AdminDep, CurrentUserDep, DbDep
 from app.schemas.account import (  # type: ignore[attr-defined]
+    AccountAddBalance,
     AccountRead,
-    AccountTopUp,
     AdminAccountCreate,
 )
 
@@ -30,7 +30,7 @@ admin_accounts_router = APIRouter(prefix="/admin/accounts", tags=["admin-account
     summary="Add balance to own account",
 )
 async def add_balance(
-    body: AccountTopUp,
+    body: AccountAddBalance,
     db: DbDep,
     current_user: CurrentUserDep,
 ) -> AccountRead:
@@ -77,7 +77,7 @@ async def add_balance(
     "",
     response_model=AccountRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a bank account for a customer user (admin only)",
+    summary="Create a bank account for any user (admin only)",
 )
 async def admin_create_account(
     body: AdminAccountCreate,
@@ -85,8 +85,9 @@ async def admin_create_account(
     current_user: AdminDep,
 ) -> AccountRead:
     """
-    Create a bank account for an existing customer user.
-    Admins do not have bank accounts; this is only valid for customer-role users.
+    Create a bank account for an existing user.
+    This endpoint is restricted to administrators via the AdminDep dependency,
+    which securely enforces the admin role and IP restrictions.
 
     Args:
     ----
@@ -101,7 +102,6 @@ async def admin_create_account(
     Raises:
     ------
         HTTPException: 404 if the user does not exist.
-        HTTPException: 422 if the user is not a customer.
         HTTPException: 409 if the user already has an account.
 
     """
