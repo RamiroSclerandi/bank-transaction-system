@@ -49,3 +49,4 @@ frontend/build/
 # ── AI ──
 AGENTS.md
 .github/
+.atl/

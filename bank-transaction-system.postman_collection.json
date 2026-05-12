@@ -1,0 +1,434 @@
+{
+  "info": {
+    "_postman_id": "bts-collection-v1",
+    "name": "Bank Transaction System",
+    "description": "Full API collection for the Bank Transaction System.\n\n## Setup\n1. Import this collection and the companion environment.\n2. Call **Customer Auth / Register** to create a customer.\n3. Call **Customer Auth / Login** — the token is saved automatically into `customer_token`.\n4. Call **Admin Auth / Login** — the token is saved automatically into `admin_token`.\n5. All other authenticated requests pick up those variables.\n\n## Environment variables\n| Variable | Description |\n|---|---|\n| `base_url` | API base (default `http://localhost:8000`) |\n| `customer_token` | Set automatically after customer login |\n| `admin_token` | Set automatically after admin login |\n| `internal_api_key` | Shared secret for Lambda worker endpoints |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "customer_token", "value": "", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "internal_api_key", "value": "", "type": "string" },
+    { "key": "customer_card_number", "value": "", "type": "string" },
+    { "key": "wrong_customer_card_number", "value": "", "type": "string" },
+    { "key": "customer_cvv", "value": "", "type": "string" },
+    { "key": "customer_password", "value": "", "type": "string" },
+    { "key": "admin_password", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns `{\"status\": \"ok\"}`. Used by Docker HEALTHCHECK and load balancers."
+          }
+        },
+        {
+          "name": "Readiness probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/readiness",
+              "host": ["{{base_url}}"],
+              "path": ["readiness"]
+            },
+            "description": "Verifies database connectivity. Returns `{\"status\": \"ok\", \"db\": \"ok\"}` or 503 if DB is unreachable."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane.doe@example.com\",\n  \"password\": \"{{customer_password}}\",\n  \"national_id\": 12345678,\n  \"phone\": 600123456,\n  \"registered_ip\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "description": "Creates a new customer and an associated bank account. No session is issued — call Login next.\n\n**Rate limit:** 5 req/min.\n\n**Returns:** `CustomerRegistrationResponse` — user + account data."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_token) {",
+                  "    pm.collectionVariables.set('customer_token', json.session_token);",
+                  "    console.log('customer_token saved:', json.session_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane.doe@example.com\",\n  \"password\": \"{{customer_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Authenticates a customer. **Saves `session_token` → `customer_token` variable automatically.**\n\n**Rate limit:** 10 req/min.\n\n**Returns:** `LoginResponse` — `session_token` + `expires_at`."
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 'No Content') {",
+                  "    pm.collectionVariables.set('customer_token', '');",
+                  "    console.log('customer_token cleared');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Invalidates the current customer session. Token becomes immediately unusable.\n\n**Returns:** 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Auth",
+      "item": [
+        {
+          "name": "Register Admin (admin-only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Super Admin\",\n  \"email\": \"admin2@bank.com\",\n  \"password\": \"{{admin_password}}\",\n  \"national_id\": 87654321,\n  \"phone\": 611000000,\n  \"registered_ip\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "auth", "register"]
+            },
+            "description": "Creates a new admin user. **Requires an existing admin session (`admin_token`).**\n\n**Rate limit:** 3 req/min.\n\nThe initial admin must be seeded via `scripts/seed_admin.py`."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_token) {",
+                  "    pm.collectionVariables.set('admin_token', json.session_token);",
+                  "    console.log('admin_token saved:', json.session_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@bank.com\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "auth", "login"]
+            },
+            "description": "Authenticates an admin user. **Saves `session_token` → `admin_token` variable automatically.**\n\n**Rate limit:** 5 req/min.\n\nTo seed the first admin run `python scripts/seed_admin.py` inside the container."
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 'No Content') {",
+                  "    pm.collectionVariables.set('admin_token', '');",
+                  "    console.log('admin_token cleared');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "auth", "logout"]
+            },
+            "description": "Invalidates the current admin session.\n\n**Returns:** 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Transactions",
+      "item": [
+        {
+          "name": "Create Transaction — national debit (immediate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"number\": \"{{customer_card_number}}\",\n    \"expiration_month\": 12,\n    \"expiration_year\": 28,\n    \"cvv\": \"{{customer_cvv}}\",\n    \"card_type\": \"debit\"\n  },\n  \"destination_account\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"150.0000\",\n  \"type\": \"national\",\n  \"scheduled_for\": null,\n  \"reversal_of\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Creates a national debit transaction. Processed immediately.\n\n- `type`: `national` | `international`\n- `card_type`: `debit` | `credit`\n- Card is looked up by HMAC of PAN. If not found it is created (get-or-create).\n- CVV is validated but **never stored**.\n- Debit: balance must be ≥ amount or transaction is FAILED.\n- Credit: always COMPLETED (no balance check).\n\n**Returns:** `TransactionRead` with `status: completed` or `status: failed`."
+          }
+        },
+        {
+          "name": "Create Transaction — national credit (immediate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"number\": \"{{wrong_customer_card_number}}\",\n    \"expiration_month\": 6,\n    \"expiration_year\": 27,\n    \"cvv\": \"{{customer_cvv}}\",\n    \"card_type\": \"credit\"\n  },\n  \"destination_account\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"500.0000\",\n  \"type\": \"national\",\n  \"scheduled_for\": null,\n  \"reversal_of\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "National credit transaction — no balance check, always COMPLETED."
+          }
+        },
+        {
+          "name": "Create Transaction — international (async via SQS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"number\": \"{{customer_card_number}}\",\n    \"expiration_month\": 12,\n    \"expiration_year\": 28,\n    \"cvv\": \"{{customer_cvv}}\",\n    \"card_type\": \"debit\"\n  },\n  \"destination_account\": \"GB29NWBK60161331926819\",\n  \"amount\": \"1000.0000\",\n  \"type\": \"international\",\n  \"scheduled_for\": null,\n  \"reversal_of\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "International payment — persisted as PENDING and published to SQS for async processing.\n\n`destination_account` is an IBAN or SWIFT code."
+          }
+        },
+        {
+          "name": "Create Transaction — scheduled (future date)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"number\": \"{{customer_card_number}}\",\n    \"expiration_month\": 12,\n    \"expiration_year\": 28,\n    \"cvv\": \"{{customer_cvv}}\",\n    \"card_type\": \"debit\"\n  },\n  \"destination_account\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"75.0000\",\n  \"type\": \"national\",\n  \"scheduled_for\": \"2026-06-01T10:00:00\",\n  \"reversal_of\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Sets a future `scheduled_for` — transaction is persisted as **SCHEDULED** and not executed yet.\n\nThe Lambda EventBridge worker polls for due scheduled transactions every minute and calls `POST /internal/transactions/{id}/process`."
+          }
+        },
+        {
+          "name": "Create Transaction — reversal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"number\": \"{{customer_card_number}}\",\n    \"expiration_month\": 12,\n    \"expiration_year\": 28,\n    \"cvv\": \"{{customer_cvv}}\",\n    \"card_type\": \"debit\"\n  },\n  \"destination_account\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"150.0000\",\n  \"type\": \"national\",\n  \"scheduled_for\": null,\n  \"reversal_of\": \"REPLACE-WITH-ORIGINAL-TRANSACTION-UUID\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Reversal of a previous transaction. Replace `reversal_of` with the UUID of the original transaction.\n\nReturns 404 if the original transaction does not exist."
+          }
+        },
+        {
+          "name": "Get Transaction by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions/REPLACE-WITH-TRANSACTION-UUID",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions", "REPLACE-WITH-TRANSACTION-UUID"]
+            },
+            "description": "Fetches a single transaction by UUID. Only the owner can access it.\n\n**Returns:** 404 if not found, 403 if it belongs to another user."
+          }
+        },
+        {
+          "name": "List Account Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions/accounts/REPLACE-WITH-ACCOUNT-UUID/transactions?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api", "v1", "transactions", "accounts",
+                "REPLACE-WITH-ACCOUNT-UUID", "transactions"
+              ],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Paginated list of transactions for a specific account. Only the account owner can access it.\n\n`limit` max 200. `offset` is zero-based."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Backoffice",
+      "item": [
+        {
+          "name": "List All Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/transactions?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "transactions"],
+              "query": [
+                { "key": "limit", "value": "50", "description": "Max 500" },
+                { "key": "offset", "value": "0" },
+                { "key": "user_id", "value": "", "disabled": true, "description": "Filter by user UUID" },
+                { "key": "account_id", "value": "", "disabled": true, "description": "Filter by account UUID" },
+                { "key": "status", "value": "", "disabled": true, "description": "pending | completed | failed | scheduled | processing" },
+                { "key": "type", "value": "", "disabled": true, "description": "national | international" },
+                { "key": "date_from", "value": "", "disabled": true, "description": "ISO datetime e.g. 2026-01-01T00:00:00" },
+                { "key": "date_to", "value": "", "disabled": true, "description": "ISO datetime e.g. 2026-12-31T23:59:59" }
+              ]
+            },
+            "description": "Full transaction list with optional filters. Admin only.\n\nAvailable filters (enable the query params above):\n- `user_id` — filter by customer\n- `account_id` — filter by account\n- `status` — `pending` | `completed` | `failed` | `scheduled` | `processing`\n- `type` — `national` | `international`\n- `date_from` / `date_to` — ISO 8601 datetime range"
+          }
+        },
+        {
+          "name": "Get Transaction by ID (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/transactions/REPLACE-WITH-TRANSACTION-UUID",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api", "v1", "admin", "transactions",
+                "REPLACE-WITH-TRANSACTION-UUID"
+              ]
+            },
+            "description": "Fetches any transaction by UUID regardless of owner. Admin only."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Internal (Lambda Worker)",
+      "item": [
+        {
+          "name": "Process Scheduled Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Internal-Api-Key", "value": "{{internal_api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/internal/transactions/REPLACE-WITH-TRANSACTION-UUID/process",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api", "v1", "internal", "transactions",
+                "REPLACE-WITH-TRANSACTION-UUID", "process"
+              ]
+            },
+            "description": "Triggers execution of a due scheduled transaction. **Called by the EventBridge Lambda worker, not by customers.**\n\nAuthenticated via `X-Internal-Api-Key` header (shared secret, set in `.env`).\n\nUses an optimistic lock (`SCHEDULED → PROCESSING`) to guarantee idempotent at-most-once execution — if two Lambda invocations race, only one succeeds.\n\n**Returns:**\n- 200 + updated `TransactionRead` on success\n- 404 if the transaction does not exist\n- 409 if the transaction is already being processed (another worker claimed it)"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -266,3 +266,56 @@ def mock_auth_verify_password() -> Generator[MagicMock, None, None]:
     """Patch verify_password inside auth_service; defaults to returning True."""
     with patch("app.services.auth_service.verify_password", return_value=True) as mock:
         yield mock
+
+
+# ── Daily Jobs service / internal endpoints patches ──
+
+
+@pytest.fixture
+def mock_subprocess_run() -> Generator[AsyncMock, None, None]:
+    """Fixture to mock asyncio.create_subprocess_exec."""
+    with patch(
+        "app.services.backup_service.asyncio.create_subprocess_exec",
+        new_callable=AsyncMock,
+    ) as mock:
+        process_mock = AsyncMock()
+        process_mock.returncode = 0
+        process_mock.communicate = AsyncMock()
+        mock.return_value = process_mock
+        yield mock
+
+
+@pytest.fixture
+def mock_os_makedirs() -> Generator[MagicMock, None, None]:
+    """Fixture to mock os.makedirs."""
+    with patch("app.services.backup_service.os.makedirs") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_boto3_client() -> Generator[MagicMock, None, None]:
+    """Fixture to mock boto3.client."""
+    with patch("app.services.backup_service.boto3.client") as mock:
+        mock_client = MagicMock()
+        mock.return_value = mock_client
+        yield mock_client
+
+
+@pytest.fixture
+def mock_archive_service() -> Generator[AsyncMock, None, None]:
+    """Fixture to mock archive_service.copy_transactions_to_history."""
+    with patch(
+        "app.api.api_v1.endpoints.internal.archive_service.copy_transactions_to_history",
+        new_callable=AsyncMock,
+    ) as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_backup_service() -> Generator[AsyncMock, None, None]:
+    """Fixture to mock backup_service.execute_daily_backup."""
+    with patch(
+        "app.api.api_v1.endpoints.internal.backup_service.execute_daily_backup",
+        new_callable=AsyncMock,
+    ) as mock:
+        yield mock
