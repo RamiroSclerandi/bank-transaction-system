@@ -53,7 +53,8 @@ class CardInput(BaseModel):
 class CardRead(BaseModel):
     """
     Card resource returned to callers.
-    Only the last 4 digits are exposed via `number_masked`.
+    Only the last 4 digits are exposed, both directly via
+    `number_last4` and in masked display form via `number_masked`.
     The full PAN and CVV are never returned.
     """
 

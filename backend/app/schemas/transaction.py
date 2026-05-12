@@ -44,10 +44,13 @@ class TransactionCreate(BaseModel):
         """Reject scheduled_for values that are not in the future."""
         if v is not None:
             now = datetime.now(tz=UTC).replace(tzinfo=None)
-            # Strip tzinfo if provided to compare consistently
-            v_naive = v.replace(tzinfo=None) if v.tzinfo is not None else v
-            if v_naive <= now:
+            # Normalize aware datetimes to UTC before storing/comparing as naive UTC
+            v_normalized = (
+                v.astimezone(UTC).replace(tzinfo=None) if v.tzinfo is not None else v
+            )
+            if v_normalized <= now:
                 raise ValueError("scheduled_for must be a future datetime")
+            return v_normalized
         return v
 
 

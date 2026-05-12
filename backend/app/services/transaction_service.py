@@ -105,7 +105,8 @@ async def _resolve_card(
             )
     except IntegrityError:
         # Concurrent request created the same card — re-fetch it
-        card = await crud_card.get_by_hmac(db, number_hmac=pan_hmac)
+        async with db.begin():
+            card = await crud_card.get_by_hmac(db, number_hmac=pan_hmac)
         if card is None or card.account.user_id != current_user.id:  # type: ignore[union-attr]
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -136,8 +137,8 @@ async def create_transaction(
     Raises:
     ------
         HTTPException: 403 if the source card does not belong to current_user.
-        HTTPException: 404 if the source card is not found.
-        HTTPException: 409 if a reversal target transaction is not found.
+        HTTPException: 404 if the user's account is not found, or if a
+        reversal target transaction is not found.
 
     """
     # 1. Resolve card (get-or-create by number) and verify ownership
