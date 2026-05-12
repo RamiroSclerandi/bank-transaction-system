@@ -15,9 +15,8 @@ class TestCopyTransactionsToHistory:
     """Tests for archive_service.copy_transactions_to_history."""
 
     @pytest.mark.asyncio
-    async def test_returns_row_count_of_inserted_rows(self) -> None:
+    async def test_returns_row_count_of_inserted_rows(self, mock_db: AsyncMock) -> None:
         """Should return the number of rows successfully copied."""
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.rowcount = 5
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -27,9 +26,8 @@ class TestCopyTransactionsToHistory:
         assert result == 5
 
     @pytest.mark.asyncio
-    async def test_returns_zero_when_no_eligible_rows(self) -> None:
+    async def test_returns_zero_when_no_eligible_rows(self, mock_db: AsyncMock) -> None:
         """When all transactions are already archived, rowcount is 0."""
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.rowcount = 0
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -39,9 +37,8 @@ class TestCopyTransactionsToHistory:
         assert result == 0
 
     @pytest.mark.asyncio
-    async def test_executes_db_query(self) -> None:
+    async def test_executes_db_query(self, mock_db: AsyncMock) -> None:
         """The service must call db.execute exactly once with an INSERT statement."""
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.rowcount = 3
         mock_db.execute = AsyncMock(return_value=mock_result)

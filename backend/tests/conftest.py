@@ -272,10 +272,16 @@ def mock_auth_verify_password() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_subprocess_run() -> Generator[MagicMock, None, None]:
-    """Fixture to mock subprocess.run."""
-    with patch("app.services.backup_service.subprocess.run") as mock:
-        mock.return_value = MagicMock(returncode=0)
+def mock_subprocess_run() -> Generator[AsyncMock, None, None]:
+    """Fixture to mock asyncio.create_subprocess_exec."""
+    with patch(
+        "app.services.backup_service.asyncio.create_subprocess_exec",
+        new_callable=AsyncMock,
+    ) as mock:
+        process_mock = AsyncMock()
+        process_mock.returncode = 0
+        process_mock.communicate = AsyncMock()
+        mock.return_value = process_mock
         yield mock
 
 

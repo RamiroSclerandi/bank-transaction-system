@@ -6,6 +6,7 @@ Strategy pattern based on ENVIRONMENT:
   - production: triggers a native AWS RDS snapshot via boto3
 """
 
+import asyncio
 import os
 import re
 import subprocess
@@ -56,7 +57,11 @@ async def _run_development_backup() -> dict[str, str]:
     pg_args = _parse_db_url_for_pg_dump(settings.DATABASE_URL)
     cmd = pg_args + ["-f", output_path]
 
-    subprocess.run(cmd, check=True)  # noqa: S603 — cmd built from parsed config, not user input
+    process = await asyncio.create_subprocess_exec(*cmd)
+    await process.communicate()
+
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode or 1, cmd)
 
     return {"snapshot_id": filename, "status": "completed"}
 
@@ -68,12 +73,16 @@ async def _run_production_backup() -> dict[str, str]:
 
     rds = boto3.client("rds", region_name=settings.AWS_REGION)  # type: ignore[no-untyped-call]
 
-    try:
+    def _create_snapshot() -> dict[str, str]:
         response = rds.create_db_snapshot(  # type: ignore[no-untyped-call]
             DBSnapshotIdentifier=snapshot_id,
             DBInstanceIdentifier=settings.AWS_RDS_INSTANCE_IDENTIFIER,
         )
-        status: str = response["DBSnapshot"]["Status"]  # type: ignore[no-untyped-dict-access]
+        return {"status": response["DBSnapshot"]["Status"]}  # type: ignore[no-untyped-dict-access]
+
+    try:
+        result = await asyncio.to_thread(_create_snapshot)
+        status = result["status"]
     except botocore.exceptions.ClientError as exc:
         error_code = exc.response["Error"]["Code"]  # type: ignore[no-untyped-dict-access]
         if error_code == "DBSnapshotAlreadyExists":

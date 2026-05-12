@@ -40,7 +40,6 @@ async def copy_transactions_to_history(db: AsyncSession) -> int:
     # Denormalized SELECT from transactions + accounts
     select_stmt = (
         select(
-            func.gen_random_uuid(),
             Transaction.id,
             Account.user_id,
             Transaction.origin_account,
@@ -70,7 +69,6 @@ async def copy_transactions_to_history(db: AsyncSession) -> int:
     # The columns must match the exact order of the select_stmt
     archive_stmt = insert(TransactionHistory).from_select(
         [
-            "id",
             "transaction_id",
             "user_id",
             "origin_account_id",
@@ -89,5 +87,6 @@ async def copy_transactions_to_history(db: AsyncSession) -> int:
         select_stmt,
     )
 
-    result = await db.execute(archive_stmt)
+    async with db.begin():
+        result = await db.execute(archive_stmt)
     return int(result.rowcount)  # type: ignore[attr-defined]

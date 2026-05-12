@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, String
+from sqlalchemy import DateTime, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,7 +19,11 @@ class TransactionHistory(Base):
 
     __tablename__ = "transaction_history"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
     transaction_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     origin_account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)

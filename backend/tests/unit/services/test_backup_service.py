@@ -40,9 +40,8 @@ class TestExecuteDailyBackupDevelopment:
         assert result["snapshot_id"] == expected_filename
         assert result["status"] == "completed"
         mock_subprocess_run.assert_called_once()
-        call_args = mock_subprocess_run.call_args[0][0]
-        assert "pg_dump" in call_args
-        assert expected_filename in call_args[-1]
+        assert "pg_dump" in mock_subprocess_run.call_args[0]
+        assert expected_filename in mock_subprocess_run.call_args[0][-1]
 
     @pytest.mark.asyncio
     async def test_dev_creates_backup_directory(
