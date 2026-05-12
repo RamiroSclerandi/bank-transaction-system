@@ -87,6 +87,23 @@ class CRUDAccount:
         account.balance = account.balance - amount
         db.add(account)
 
+    async def add_balance(
+        self, db: AsyncSession, *, account: Account, amount: Decimal
+    ) -> None:
+        """
+        Add amount to account balance. Must be called inside a transaction
+        that holds a row lock on the account (obtained via get_with_lock).
+
+        Args:
+        ----
+            db: Active async database session.
+            account: The locked Account instance.
+            amount: The amount to credit (must be > 0).
+
+        """
+        account.balance = account.balance + amount
+        db.add(account)
+
     async def create(self, db: AsyncSession, *, user_id: uuid.UUID) -> Account:
         """
         Create a new bank account for a user with zero initial balance.
