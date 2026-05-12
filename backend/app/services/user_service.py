@@ -33,7 +33,6 @@ def _raise_for_integrity_error(exc: IntegrityError) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="A user with this phone already exists.",
         )
-    raise exc
 
 
 async def create_admin(
@@ -82,9 +81,10 @@ async def create_admin(
                     detail="A user with this phone already exists.",
                 )
             user = await crud_user.create_admin(db, data=data)
+        return user
     except IntegrityError as exc:
         _raise_for_integrity_error(exc)
-    return user  # type: ignore[return-value]
+        raise
 
 
 async def register_customer(
@@ -136,6 +136,7 @@ async def register_customer(
                 )
             user = await crud_user.create_customer(db, data=data)
             account = await crud_account.create(db, user_id=user.id)
+        return user, account
     except IntegrityError as exc:
         _raise_for_integrity_error(exc)
-    return user, account  # type: ignore[return-value]
+        raise
