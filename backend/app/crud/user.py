@@ -47,6 +47,42 @@ class CRUDUser:
         result = await db.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
+    async def get_by_national_id(
+        self, db: AsyncSession, *, national_id: int
+    ) -> User | None:
+        """
+        Fetch a user by national ID number.
+
+        Args:
+        ----
+            db: Active async database session.
+            national_id: The national ID to look up.
+
+        Returns:
+        -------
+            The User instance or None if not found.
+
+        """
+        result = await db.execute(select(User).where(User.national_id == national_id))
+        return result.scalar_one_or_none()
+
+    async def get_by_phone(self, db: AsyncSession, *, phone: int) -> User | None:
+        """
+        Fetch a user by phone number.
+
+        Args:
+        ----
+            db: Active async database session.
+            phone: The phone number to look up.
+
+        Returns:
+        -------
+            The User instance or None if not found.
+
+        """
+        result = await db.execute(select(User).where(User.phone == phone))
+        return result.scalar_one_or_none()
+
     async def create_admin(
         self,
         db: AsyncSession,
