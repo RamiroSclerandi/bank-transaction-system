@@ -21,6 +21,7 @@ class TransactionHistory(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     transaction_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     origin_account_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     destination_account: Mapped[str] = mapped_column(String(255), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
@@ -33,5 +34,7 @@ class TransactionHistory(Base):
     hour: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     archived_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(tz=UTC)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
     )
