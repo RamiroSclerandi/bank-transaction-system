@@ -232,6 +232,21 @@ def mock_sqs() -> Generator[AsyncMock, None, None]:
         yield mock
 
 
+# ── User service CRUD patches ──
+@pytest.fixture
+def mock_user_crud_user() -> Generator[MagicMock, None, None]:
+    """Patch crud_user inside user_service."""
+    with patch("app.services.user_service.crud_user") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_user_crud_account() -> Generator[MagicMock, None, None]:
+    """Patch crud_account inside user_service."""
+    with patch("app.services.user_service.crud_account") as mock:
+        yield mock
+
+
 # ── Auth service CRUD patches ──
 @pytest.fixture
 def mock_auth_crud_user() -> Generator[MagicMock, None, None]:

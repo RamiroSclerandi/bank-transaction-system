@@ -6,6 +6,7 @@ Handles user creation for all roles:
 """
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.account import crud_account
@@ -13,6 +14,25 @@ from app.crud.user import crud_user
 from app.models.account import Account
 from app.models.user import User
 from app.schemas.user import AdminUserCreate, CustomerUserCreate
+
+
+def _raise_for_integrity_error(exc: IntegrityError) -> None:
+    constraint: str = getattr(exc.orig, "constraint_name", "") or ""
+    if "email" in constraint:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists.",
+        )
+    if "national_id" in constraint:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this national_id already exists.",
+        )
+    if "phone" in constraint:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this phone already exists.",
+        )
 
 
 async def create_admin(
@@ -35,18 +55,36 @@ async def create_admin(
 
     Raises:
     ------
-        HTTPException: 409 if the email is already registered.
+        HTTPException: 409 if the email, national_id, or phone is already registered.
 
     """
-    async with db.begin():
-        existing = await crud_user.get_by_email(db, email=data.email)
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A user with this email already exists.",
+    try:
+        async with db.begin():
+            existing = await crud_user.get_by_email(db, email=data.email)
+            if existing is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this email already exists.",
+                )
+            existing_nid = await crud_user.get_by_national_id(
+                db, national_id=data.national_id
             )
-        user = await crud_user.create_admin(db, data=data)
-    return user
+            if existing_nid is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this national_id already exists.",
+                )
+            existing_phone = await crud_user.get_by_phone(db, phone=data.phone)
+            if existing_phone is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this phone already exists.",
+                )
+            user = await crud_user.create_admin(db, data=data)
+        return user
+    except IntegrityError as exc:
+        _raise_for_integrity_error(exc)
+        raise
 
 
 async def register_customer(
@@ -71,17 +109,34 @@ async def register_customer(
 
     Raises:
     ------
-        HTTPException: 409 if the email is already registered.
+        HTTPException: 409 if the email, national_id, or phone is already registered.
 
     """
-    async with db.begin():
-        existing = await crud_user.get_by_email(db, email=data.email)
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A user with this email already exists.",
+    try:
+        async with db.begin():
+            existing = await crud_user.get_by_email(db, email=data.email)
+            if existing is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this email already exists.",
+                )
+            existing_nid = await crud_user.get_by_national_id(
+                db, national_id=data.national_id
             )
-        user = await crud_user.create_customer(db, data=data)
-        account = await crud_account.create(db, user_id=user.id)
-
-    return user, account
+            if existing_nid is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this national_id already exists.",
+                )
+            existing_phone = await crud_user.get_by_phone(db, phone=data.phone)
+            if existing_phone is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this phone already exists.",
+                )
+            user = await crud_user.create_customer(db, data=data)
+            account = await crud_account.create(db, user_id=user.id)
+        return user, account
+    except IntegrityError as exc:
+        _raise_for_integrity_error(exc)
+        raise
