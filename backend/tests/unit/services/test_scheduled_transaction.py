@@ -10,10 +10,8 @@ AWS relevance:
   - In the national-debit path, no AWS service is involved.
   - In the international path, SQS is called. A publish failure should be
     treated the same as in create_transaction: the exception propagates and
-    the DB transaction is rolled back, leaving the row in 'processing' state
-    (the Lambda worker will not retry automatically — EventBridge will invoke
-    a fresh execution on the next tick, but the row is stuck in 'processing').
-    Operationally this requires a dead-letter queue or a manual status reset.
+    the enclosing DB transaction is rolled back, leaving the row in
+    'scheduled' state so it can be retried on a later worker execution.
 """
 
 import uuid
