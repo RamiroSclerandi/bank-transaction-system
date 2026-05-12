@@ -41,9 +41,9 @@ class Settings(BaseSettings):
     # -- AWS SQS (required in production) --
     SQS_INTERNATIONAL_QUEUE_URL: str
 
-    # -- AWS IAM User --
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
+    # -- AWS IAM User (required for local development) --
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
 
     # -- Internal Service Auth --
     INTERNAL_SERVICE_API_KEY: str
