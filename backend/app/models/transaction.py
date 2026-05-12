@@ -88,7 +88,9 @@ class Transaction(Base):
         comment="References the original transaction when this is a reversal.",
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(tz=UTC)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
     )
 
     # Relationships

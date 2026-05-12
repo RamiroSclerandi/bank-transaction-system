@@ -188,9 +188,14 @@ class CRUDTransaction:
         query = select(Transaction)
 
         if filters.user_id:
-            query = query.join(Account, Transaction.origin_account == Account.id).where(
-                Account.user_id == filters.user_id
+            # Resolve user_id → account.id via subquery (1-to-1 relationship)
+            account_subq = (
+                select(Account.id)
+                .where(Account.user_id == filters.user_id)
+                .scalar_subquery()
             )
+            query = query.where(Transaction.origin_account == account_subq)
+
         if filters.account_id:
             query = query.where(Transaction.origin_account == filters.account_id)
         if filters.status:

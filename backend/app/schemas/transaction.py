@@ -1,23 +1,26 @@
 """Pydantic schemas for Transaction resources."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.transaction import TransactionStatus, TransactionType
+from app.schemas.card import CardInput
 
 
 class TransactionCreate(BaseModel):
     """
-    Payload for creating a new transaction. The `method` is NOT provided
-    by the caller — it is derived by the service from the source card's
-    card_type and denormalized into the record.  The `origin_account` is also
-    derived from the source card's account.
+    Payload for creating a new transaction.
+
+    `card` contains the full card details used to identify or create the
+    payment card (get-or-create semantics). The `method` (debit/credit) is
+    derived from the card_type and denormalized into the transaction record.
+    The `origin_account` is derived from the card's owning account.
     """
 
-    source_card: uuid.UUID = Field(..., description="UUID of the card to charge.")
+    card: CardInput = Field(..., description="Card details used for this transaction.")
     destination_account: str = Field(
         ...,
         min_length=1,
@@ -35,6 +38,21 @@ class TransactionCreate(BaseModel):
         description="Reference to the original transaction if this is a reversal.",
     )
 
+    @field_validator("scheduled_for", mode="before")
+    @classmethod
+    def scheduled_for_must_be_future(cls, v: datetime | None) -> datetime | None:
+        """Reject scheduled_for values that are not in the future."""
+        if v is not None:
+            now = datetime.now(tz=UTC).replace(tzinfo=None)
+            # Normalize aware datetimes to UTC before storing/comparing as naive UTC
+            v_normalized = (
+                v.astimezone(UTC).replace(tzinfo=None) if v.tzinfo is not None else v
+            )
+            if v_normalized <= now:
+                raise ValueError("scheduled_for must be a future datetime")
+            return v_normalized
+        return v
+
 
 class TransactionProcessInternal(BaseModel):
     """
@@ -45,32 +63,6 @@ class TransactionProcessInternal(BaseModel):
     model_config = {"from_attributes": True}
 
     pass  # transaction_id is provided as a path parameter
-
-
-class WebhookUpdate(BaseModel):
-    """
-    Payload from the external international payment processor.
-    Called on the internal webhook endpoint after the external processor
-    completes or rejects an international payment.
-    """
-
-    status: TransactionStatus = Field(
-        ...,
-        description="Final status: 'completed' or 'failed'.",
-    )
-    external_reference: str | None = Field(
-        default=None,
-        max_length=255,
-        description="External processor's reference ID for correlation.",
-    )
-
-    @field_validator("status")
-    @classmethod
-    def status_must_be_terminal(cls, v: TransactionStatus) -> TransactionStatus:
-        """Ensure the webhook only sets terminal statuses."""
-        if v not in (TransactionStatus.completed, TransactionStatus.failed):
-            raise ValueError("Webhook status must be 'completed' or 'failed'.")
-        return v
 
 
 class TransactionRead(BaseModel):

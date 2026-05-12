@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, status
 
 from app.deps import DbDep, InternalAuthDep
-from app.schemas.transaction import TransactionRead, WebhookUpdate
+from app.schemas.transaction import TransactionRead
 from app.services import transaction_service
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -49,50 +49,6 @@ async def process_scheduled(
     """
     transaction = await transaction_service.process_scheduled_transaction(
         transaction_id=transaction_id,
-        db=db,
-    )
-    return TransactionRead.model_validate(transaction)
-
-
-@router.post(
-    "/transactions/{transaction_id}/webhook",
-    response_model=TransactionRead,
-    status_code=status.HTTP_200_OK,
-    summary="Receive status update from external payment processor",
-)
-async def payment_webhook(
-    transaction_id: uuid.UUID,
-    payload: WebhookUpdate,
-    db: DbDep,
-    _auth: InternalAuthDep,
-) -> TransactionRead:
-    """
-    Update a pending international transaction to completed or failed.
-    Called by the External International Payment Processor after it has
-    finished processing the transaction. Only terminal statuses are accepted
-    (completed or failed). The status field validator on WebhookUpdate enforces
-    this at the Pydantic layer.
-
-    Args:
-    ----
-        transaction_id: UUID of the international transaction to update.
-        payload: Webhook payload with the final status.
-        db: Injected database session.
-        _auth: Internal API key validation.
-
-    Returns:
-    -------
-        The updated transaction resource.
-
-    Raises:
-    ------
-        HTTPException: 404 if the transaction does not exist.
-        HTTPException: 409 if the transaction is not currently 'pending'.
-
-    """
-    transaction = await transaction_service.handle_payment_webhook(
-        transaction_id=transaction_id,
-        payload=payload,
         db=db,
     )
     return TransactionRead.model_validate(transaction)

@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.models.transaction import Transaction
 
 
-def _get_sqs_client() -> Any:
+def _get_sqs_client() -> boto3.client:  # type: ignore[no-any-return]
     """
     Create a boto3 SQS client using environment-configured credentials.
 
@@ -25,7 +25,12 @@ def _get_sqs_client() -> Any:
         A boto3 SQS client.
 
     """
-    return boto3.client("sqs", region_name=settings.AWS_REGION)
+    return boto3.client(  # type: ignore[no-any-return]
+        "sqs",
+        region_name=settings.AWS_REGION,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    )
 
 
 async def publish_international_payment(transaction: Transaction) -> None:
@@ -58,7 +63,7 @@ async def publish_international_payment(transaction: Transaction) -> None:
     loop = asyncio.get_event_loop()
 
     def _send() -> dict[str, Any]:
-        client = _get_sqs_client()
+        client = _get_sqs_client()  # type: ignore[no-any-return]
         return client.send_message(  # type: ignore[no-any-return]
             QueueUrl=settings.SQS_INTERNATIONAL_QUEUE_URL,
             MessageBody=message_body,
