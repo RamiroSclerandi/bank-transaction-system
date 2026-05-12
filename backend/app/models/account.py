@@ -34,7 +34,9 @@ class Account(Base):
         default=Decimal("0.0000"),
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now(tz=UTC)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(tz=UTC).replace(tzinfo=None),
     )
 
     # Relationships
