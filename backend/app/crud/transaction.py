@@ -46,7 +46,7 @@ class CRUDTransaction:
         """
         result = await db.execute(
             select(Transaction)
-            .options(joinedload(Transaction.account))
+            .options(joinedload(Transaction.account))  # type: ignore[arg-type]
             .where(Transaction.id == transaction_id)
         )
         return result.scalar_one_or_none()
