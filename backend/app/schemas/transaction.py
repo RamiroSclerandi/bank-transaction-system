@@ -38,7 +38,7 @@ class TransactionCreate(BaseModel):
         description="Reference to the original transaction if this is a reversal.",
     )
 
-    @field_validator("scheduled_for", mode="before")
+    @field_validator("scheduled_for", mode="after")
     @classmethod
     def scheduled_for_must_be_future(cls, v: datetime | None) -> datetime | None:
         """Reject scheduled_for values that are not in the future."""
