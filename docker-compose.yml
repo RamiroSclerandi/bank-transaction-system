@@ -29,10 +29,15 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      # Always points to the compose db service, overriding whatever is in .env
+      - DEBUG=true
+      - ENVIRONMENT=development
       - DATABASE_URL=postgresql+asyncpg://bank_user:bank_password@db:5432/bank_transactions
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
       interval: 30s
