@@ -31,8 +31,10 @@ class TestExecuteDailyBackupDevelopment:
     async def test_dev_calls_pg_dump_with_correct_filename(
         self, mock_subprocess_run: MagicMock, mock_os_makedirs: MagicMock
     ) -> None:
-        """In development, pg_dump is called with the
-        daily-snapshot-YYYY-MM-DD filename."""
+        """
+        In development, pg_dump is called with the
+        daily-snapshot-YYYY-MM-DD filename.
+        """
         result = await backup_service.execute_daily_backup()
 
         today = date.today().isoformat()
@@ -40,8 +42,9 @@ class TestExecuteDailyBackupDevelopment:
         assert result["snapshot_id"] == expected_filename
         assert result["status"] == "completed"
         mock_subprocess_run.assert_called_once()
-        assert "pg_dump" in mock_subprocess_run.call_args[0]
-        assert expected_filename in mock_subprocess_run.call_args[0][-1]
+        called_cmd = mock_subprocess_run.call_args[0][0]
+        assert "pg_dump" in called_cmd
+        assert expected_filename in called_cmd[-1]
 
     @pytest.mark.asyncio
     async def test_dev_creates_backup_directory(
@@ -74,8 +77,10 @@ class TestExecuteDailyBackupProduction:
     async def test_prod_calls_rds_create_snapshot_with_correct_name(
         self, mock_boto3_client: MagicMock
     ) -> None:
-        """In production, boto3 RDS create_db_snapshot is called with
-        daily-snapshot-YYYY-MM-DD."""
+        """
+        In production, boto3 RDS create_db_snapshot is called with
+        daily-snapshot-YYYY-MM-DD.
+        """
         mock_boto3_client.create_db_snapshot.return_value = {
             "DBSnapshot": {
                 "DBSnapshotIdentifier": "daily-snapshot-2026-05-11",
@@ -98,8 +103,10 @@ class TestExecuteDailyBackupProduction:
     async def test_prod_handles_duplicate_snapshot_idempotently(
         self, mock_boto3_client: MagicMock
     ) -> None:
-        """In production, a DBSnapshotAlreadyExists error is
-        caught and treated as success."""
+        """
+        In production, a DBSnapshotAlreadyExists error is
+        caught and treated as success.
+        """
         mock_boto3_client.create_db_snapshot.side_effect = (
             botocore.exceptions.ClientError(
                 {

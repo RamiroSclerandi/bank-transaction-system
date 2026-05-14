@@ -22,44 +22,52 @@ from app.models.user import User, UserRole
 @pytest.fixture
 def customer_user() -> User:
     """Return a minimal customer User fixture."""
+    now = datetime.now(UTC).replace(tzinfo=None)
     user = User(
         id=uuid.uuid4(),
         name="Test Customer",
         national_id=12345678,
         email="customer@example.com",
         phone=600000000,
-        password_hash="$2b$12$test_placeholder",
+        password_hash="$2b$12$test_placeholder",  # noqa: S106
         role=UserRole.customer,
         registered_ip=None,
     )
+    user.created_at = now
+    user.updated_at = now
     return user
 
 
 @pytest.fixture
 def admin_user() -> User:
     """Return a minimal admin User fixture."""
+    now = datetime.now(UTC).replace(tzinfo=None)
     user = User(
         id=uuid.uuid4(),
         name="Test Admin",
         national_id=87654321,
         email="admin@example.com",
         phone=611111111,
-        password_hash="$2b$12$test_placeholder",
+        password_hash="$2b$12$test_placeholder",  # noqa: S106
         role=UserRole.admin,
         registered_ip=None,
     )
+    user.created_at = now
+    user.updated_at = now
     return user
 
 
 @pytest.fixture
 def account(customer_user: User) -> Account:
     """Return an Account fixture linked to the customer user."""
+    now = datetime.now(UTC).replace(tzinfo=None)
     acc = Account(
         id=uuid.uuid4(),
         user_id=customer_user.id,
         balance=Decimal("1000.0000"),
     )
     acc.user = customer_user
+    acc.created_at = now
     return acc
 
 
@@ -137,7 +145,7 @@ def make_session() -> Callable[..., MagicMock]:
         session = MagicMock(spec=UserSession)
         session.id = uuid.uuid4()
         session.user_id = user_id
-        session.token_hash = "deadbeef"
+        session.token_hash = "deadbeef"  # noqa: S105
         session.ip_address = "1.2.3.4"
         session.created_at = datetime.now(UTC).replace(tzinfo=None)
         session.expires_at = expires_at or (
@@ -287,16 +295,9 @@ def mock_auth_verify_password() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_subprocess_run() -> Generator[AsyncMock, None, None]:
-    """Fixture to mock asyncio.create_subprocess_exec."""
-    with patch(
-        "app.services.backup_service.asyncio.create_subprocess_exec",
-        new_callable=AsyncMock,
-    ) as mock:
-        process_mock = AsyncMock()
-        process_mock.returncode = 0
-        process_mock.communicate = AsyncMock()
-        mock.return_value = process_mock
+def mock_subprocess_run() -> Generator[MagicMock, None, None]:
+    """Fixture to mock subprocess.run inside asyncio.to_thread (backup_service)."""
+    with patch("app.services.backup_service.subprocess.run") as mock:
         yield mock
 
 
@@ -336,7 +337,12 @@ def mock_backup_service() -> Generator[AsyncMock, None, None]:
         yield mock
 
 
-# ── Internal cron endpoint patches ──
+# ── Admin service CRUD patches ──
+@pytest.fixture
+def mock_admin_crud_transaction() -> Generator[MagicMock, None, None]:
+    """Patch crud_transaction inside transaction_service (admin path)."""
+    with patch("app.services.transaction_service.crud_transaction") as mock:
+        yield mock
 
 
 @pytest.fixture

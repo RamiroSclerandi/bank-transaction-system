@@ -21,6 +21,7 @@ from app.models.user import User
 from app.schemas.card import CardInput
 from app.schemas.transaction import TransactionCreate
 from app.services import transaction_service
+from fastapi import HTTPException
 
 # -- Card input helpers --------------------------------------------------------
 
@@ -147,8 +148,6 @@ class TestCreateTransaction:
         The FAILED transaction must still be persisted (audit trail), and
         no balance deduction must occur.
         """
-        from fastapi import HTTPException
-
         account.balance = Decimal("10.00")
         payload = TransactionCreate(
             card=_DEBIT_CARD_INPUT,
@@ -208,8 +207,6 @@ class TestCreateTransaction:
         mock_db: AsyncMock,
     ):
         """Using another user's card must raise HTTP 403."""
-        from fastapi import HTTPException
-
         debit_card.account.user_id = uuid.uuid4()  # type: ignore[union-attr]  # different user
         payload = TransactionCreate(
             card=_DEBIT_CARD_INPUT,
@@ -234,8 +231,6 @@ class TestCreateTransaction:
         mock_db: AsyncMock,
     ):
         """Specifying a reversal_of UUID that does not exist must raise 404."""
-        from fastapi import HTTPException
-
         payload = TransactionCreate(
             card=_DEBIT_CARD_INPUT,
             destination_account="dest",
@@ -261,8 +256,6 @@ class TestCreateTransaction:
         mock_db: AsyncMock,
     ):
         """If the authenticated user has no account, card creation must raise 404."""
-        from fastapi import HTTPException
-
         mock_crud_card.get_by_hmac = AsyncMock(return_value=None)
         mock_crud_card.create = AsyncMock()
         mock_crud_account.get_by_user = AsyncMock(return_value=None)
@@ -348,8 +341,6 @@ class TestGetTransactionForCustomer:
         mock_db: AsyncMock,
     ):
         """When the transaction does not exist a 404 is raised."""
-        from fastapi import HTTPException
-
         mock_crud_tx.get = AsyncMock(return_value=None)
 
         with pytest.raises(HTTPException) as exc_info:
@@ -368,8 +359,6 @@ class TestGetTransactionForCustomer:
         make_transaction: Callable[..., MagicMock],
     ):
         """A transaction owned by a different user must raise 403, not expose data."""
-        from fastapi import HTTPException
-
         tx = make_transaction(TransactionStatus.completed)
         tx.account.user_id = uuid.uuid4()  # different user
         mock_crud_tx.get = AsyncMock(return_value=tx)
@@ -420,8 +409,6 @@ class TestListAccountTransactionsForCustomer:
         mock_db: AsyncMock,
     ):
         """Accessing another user's account must raise 403 without querying transactions."""  # noqa: E501
-        from fastapi import HTTPException
-
         other_account = MagicMock()
         other_account.id = uuid.uuid4()
         other_account.user_id = uuid.uuid4()  # different user
@@ -446,8 +433,6 @@ class TestListAccountTransactionsForCustomer:
         mock_db: AsyncMock,
     ):
         """A non-existent account ID must raise 403 (no information leakage about ownership)."""  # noqa: E501
-        from fastapi import HTTPException
-
         mock_crud_account.get = AsyncMock(return_value=None)
 
         with pytest.raises(HTTPException) as exc_info:

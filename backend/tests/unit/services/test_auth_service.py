@@ -53,7 +53,11 @@ class TestLogin:
         mock_auth_crud_user.get_by_email = AsyncMock(return_value=user)
 
         result_session, raw_token = await auth_service.login(
-            db=mock_db, request=request, email=user.email, password="secret", role=role
+            db=mock_db,
+            request=request,
+            email=user.email,
+            password="secret",  # noqa: S106
+            role=role,  # noqa: E501
         )
 
         assert result_session is session
@@ -91,7 +95,11 @@ class TestLogin:
         mock_auth_crud_user.get_by_email = AsyncMock(return_value=user)
 
         result_session, _ = await auth_service.login(
-            db=mock_db, request=request, email=user.email, password="secret", role=role
+            db=mock_db,
+            request=request,
+            email=user.email,
+            password="secret",  # noqa: S106
+            role=role,  # noqa: E501
         )
 
         assert result_session is session
@@ -126,7 +134,7 @@ class TestLogin:
                 db=mock_db,
                 request=request,
                 email=user.email,
-                password="secret",
+                password="secret",  # noqa: S106
                 role=role,
             )
 
@@ -164,7 +172,11 @@ class TestLogin:
         mock_auth_crud_user.get_by_email = AsyncMock(return_value=user)
 
         await auth_service.login(
-            db=mock_db, request=request, email=user.email, password="secret", role=role
+            db=mock_db,
+            request=request,
+            email=user.email,
+            password="secret",  # noqa: S106
+            role=role,
         )
 
         audit_kwargs = mock_auth_crud_audit_log.create.call_args.kwargs
@@ -196,7 +208,7 @@ class TestLogin:
                 db=mock_db,
                 request=request,
                 email=user.email,
-                password="wrong",
+                password="wrong",  # noqa: S106
                 role=role,
             )
 
@@ -225,7 +237,7 @@ class TestLogin:
                 db=mock_db,
                 request=request,
                 email="nobody@example.com",
-                password="secret",
+                password="secret",  # noqa: S106
                 role=role,
             )
 
@@ -253,7 +265,7 @@ class TestLogin:
                 db=mock_db,
                 request=request,
                 email=admin_user.email,
-                password="secret",
+                password="secret",  # noqa: S106
                 role=UserRole.customer,  # wrong role
             )
 
