@@ -1,11 +1,11 @@
 """
 Unit tests for CRUDTransaction.get_due_ids.
 
-Tests verify:
-- Returns UUIDs of transactions with status='scheduled' AND scheduled_for <= now().
-- Returns empty list when no transactions qualify.
-- Excludes transactions with non-'scheduled' status.
-- Excludes transactions with scheduled_for > now().
+Smoke tests: verify that the method forwards the db.execute result correctly.
+The WHERE-clause filtering logic (status='scheduled', scheduled_for <= now())
+is intentionally not exercised here — mocking db.execute bypasses SQLAlchemy's
+query compilation entirely. That behavior belongs in integration tests with a
+real database session.
 """
 
 import uuid
@@ -13,12 +13,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.crud.transaction import CRUDTransaction
-
-
-def _make_row(tid: uuid.UUID) -> MagicMock:
-    row = MagicMock()
-    row.__iter__ = MagicMock(return_value=iter([tid]))
-    return tid
 
 
 @pytest.mark.asyncio

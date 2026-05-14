@@ -87,14 +87,16 @@ async def run_archive_transactions(
     try:
         rows_archived = await archive_service.copy_transactions_to_history(db=db)
     except SQLAlchemyError as exc:
+        logger.exception("Database error during archive transaction job")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Database error during archive: {exc}",
+            detail="Database error during archive.",
         ) from exc
     except Exception as exc:
+        logger.exception("Unexpected error during archive transaction job")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error during archive: {exc}",
+            detail="Unexpected error during archive.",
         ) from exc
     return {"rows_archived": rows_archived}
 
@@ -128,9 +130,24 @@ async def run_daily_backup(
             detail=f"pg_dump binary not found: {exc}",
         ) from exc
     except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr
+        if isinstance(stderr, bytes):
+            stderr_detail = stderr.decode("utf-8", errors="replace").strip()
+        elif stderr is not None:
+            stderr_detail = str(stderr).strip()
+        else:
+            stderr_detail = ""
+        stderr_detail = stderr_detail[:500] if stderr_detail else "no stderr output"
+        logger.exception(
+            "pg_dump failed with exit code %s: %s",
+            exc.returncode,
+            stderr_detail,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"pg_dump failed (exit code {exc.returncode})",
+            detail=(
+                f"pg_dump failed (exit code {exc.returncode}): " f"{stderr_detail}"
+            ),
         ) from exc
     except ValueError as exc:
         raise HTTPException(
