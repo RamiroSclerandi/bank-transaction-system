@@ -29,6 +29,8 @@ dependencies = [
 dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.7",
+    "pytest-cov>=5.0.0",
+    "testcontainers[postgres]>=4.7.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "pre-commit>=3.7.0",
@@ -62,7 +64,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/tests/**" = ["S101", "S105", "S106", "D"]
+"tests/**" = ["S101", "S105", "S106", "S107", "D"]
 "backend/app/models/**" = ["F821"]  # SQLAlchemy string forward refs resolved at mapper config
 
 [tool.mypy]
@@ -74,6 +76,11 @@ plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "unit: marks tests as unit tests (no real DB or network)",
+    "integration: marks tests as integration tests (require Docker/Postgres container)",
+]
 
 [tool.coverage.run]
 source = ["app"]
