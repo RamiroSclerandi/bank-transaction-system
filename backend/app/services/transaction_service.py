@@ -136,6 +136,8 @@ async def create_transaction(
 
     Raises:
     ------
+        HTTPException: 402 if the debit transaction is rejected due to insufficient
+        funds. The FAILED transaction is already committed to the DB as an audit record.
         HTTPException: 403 if the source card does not belong to current_user.
         HTTPException: 404 if the user's account is not found, or if a
         reversal target transaction is not found.
@@ -150,6 +152,7 @@ async def create_transaction(
 
     # 2. Validate reversal target and apply the processing decision tree — single
     # transaction so no autobegin is active before the explicit db.begin() call.
+    national_transaction: Transaction
     async with db.begin():
         if payload.reversal_of is not None:
             original = await crud_transaction.get(
@@ -191,8 +194,9 @@ async def create_transaction(
             await sqs_service.publish_international_payment(transaction)
             return transaction
 
-        # Branch C: National payment
-        return await _process_national(
+        # Branch C: National payment — captured outside the with-block so we can
+        # raise 402 after the FAILED record is already committed (audit trail).
+        national_transaction = await _process_national(
             db=db,
             source_card=card.id,
             origin_account_id=origin_account_id,
@@ -201,6 +205,19 @@ async def create_transaction(
             method=method,
             reversal_of=payload.reversal_of,
         )
+
+    # Post-commit: raise 402 if the debit was rejected due to insufficient funds.
+    # The FAILED transaction record is already persisted for audit purposes.
+    if (
+        method == TransactionMethod.debit
+        and national_transaction.status == TransactionStatus.failed
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Insufficient funds.",
+        )
+
+    return national_transaction
 
 
 async def process_scheduled_transaction(

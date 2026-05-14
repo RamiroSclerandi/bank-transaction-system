@@ -132,7 +132,7 @@ class TestCreateTransaction:
         mock_crud_account.deduct_balance.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_national_debit_insufficient_balance_fails(
+    async def test_national_debit_insufficient_balance_raises_402_and_persists(
         self,
         mock_crud_card: MagicMock,
         mock_crud_account: MagicMock,
@@ -142,7 +142,13 @@ class TestCreateTransaction:
         mock_db: AsyncMock,
         make_transaction: Callable[..., MagicMock],
     ):
-        """Debit national tx with insufficient balance must fail without deduction."""
+        """
+        Debit national tx with insufficient balance must raise HTTP 402.
+        The FAILED transaction must still be persisted (audit trail), and
+        no balance deduction must occur.
+        """
+        from fastapi import HTTPException
+
         account.balance = Decimal("10.00")
         payload = TransactionCreate(
             card=_DEBIT_CARD_INPUT,
@@ -154,12 +160,14 @@ class TestCreateTransaction:
             return_value=make_transaction(TransactionStatus.failed)
         )
 
-        result = await transaction_service.create_transaction(
-            payload=payload, db=mock_db, current_user=customer_user
-        )
+        with pytest.raises(HTTPException) as exc_info:
+            await transaction_service.create_transaction(
+                payload=payload, db=mock_db, current_user=customer_user
+            )
 
-        assert result.status == TransactionStatus.failed
+        assert exc_info.value.status_code == 402
         mock_crud_account.deduct_balance.assert_not_awaited()
+        mock_crud_tx.create.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_national_credit_completes_without_balance_check(

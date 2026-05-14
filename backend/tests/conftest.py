@@ -334,3 +334,20 @@ def mock_backup_service() -> Generator[AsyncMock, None, None]:
         new_callable=AsyncMock,
     ) as mock:
         yield mock
+
+
+# ── Internal cron endpoint patches ──
+
+
+@pytest.fixture
+def mock_internal_crud_transaction() -> Generator[MagicMock, None, None]:
+    """Patch crud_transaction inside the internal endpoints module."""
+    with patch("app.api.api_v1.endpoints.internal.crud_transaction") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_internal_transaction_service() -> Generator[MagicMock, None, None]:
+    """Patch transaction_service inside the internal endpoints module."""
+    with patch("app.api.api_v1.endpoints.internal.transaction_service") as mock:
+        yield mock
