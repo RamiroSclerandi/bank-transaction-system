@@ -57,11 +57,12 @@ async def _run_development_backup() -> dict[str, str]:
     pg_args = _parse_db_url_for_pg_dump(settings.DATABASE_URL)
     cmd = pg_args + ["-f", output_path]
 
-    process = await asyncio.create_subprocess_exec(*cmd)
-    await process.communicate()
+    # asyncio.to_thread + subprocess.run works on
+    # every OS and is consistent with the production path below.
+    def _run() -> None:
+        subprocess.run(cmd, check=True, capture_output=True)  # noqa: S603 — cmd is built from app config (DATABASE_URL), not user input
 
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode or 1, cmd)
+    await asyncio.to_thread(_run)
 
     return {"snapshot_id": filename, "status": "completed"}
 

@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -139,6 +139,28 @@ class CRUDTransaction:
             .values(status=new_status)
         )
         return result.rowcount > 0  # type: ignore[attr-defined, no-any-return]
+
+    async def get_due_ids(self, db: AsyncSession) -> list[uuid.UUID]:
+        """
+        Return UUIDs of scheduled transactions whose scheduled_for <= now().
+
+        Args:
+        ----
+            db: Active async database session.
+
+        Returns:
+        -------
+            List of UUIDs for transactions with status='scheduled'
+            and scheduled_for <= now().
+
+        """
+        result = await db.execute(
+            select(Transaction.id).where(
+                Transaction.status == TransactionStatus.scheduled,
+                Transaction.scheduled_for <= func.now(),
+            )
+        )
+        return list(result.scalars().all())
 
     async def list_by_account(
         self,

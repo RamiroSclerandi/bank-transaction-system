@@ -38,8 +38,13 @@ async def copy_transactions_to_history(db: AsyncSession) -> int:
     )
 
     # Denormalized SELECT from transactions + accounts
+    # func.gen_random_uuid() is used explicitly so each row gets its own UUID.
+    # Using the ORM insert() would cause SQLAlchemy to evaluate default=uuid.uuid4
+    # once at statement-compile time and bind the same UUID for every row,
+    # triggering UniqueViolationError on idempotent re-runs.
     select_stmt = (
         select(
+            func.gen_random_uuid(),
             Transaction.id,
             Account.user_id,
             Transaction.origin_account,
@@ -69,6 +74,7 @@ async def copy_transactions_to_history(db: AsyncSession) -> int:
     # The columns must match the exact order of the select_stmt
     archive_stmt = insert(TransactionHistory).from_select(
         [
+            "id",
             "transaction_id",
             "user_id",
             "origin_account_id",
