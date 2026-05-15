@@ -51,7 +51,11 @@ AGENTS.md
 .github/
 .atl/
 openspec/
+.gga
 
 # ── Postgres ──
 pgdata/
 db_backups/
+
+# ── Lambdas ──
+lambdas/

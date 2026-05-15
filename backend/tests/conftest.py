@@ -357,3 +357,24 @@ def mock_internal_transaction_service() -> Generator[MagicMock, None, None]:
     """Patch transaction_service inside the internal endpoints module."""
     with patch("app.api.api_v1.endpoints.internal.transaction_service") as mock:
         yield mock
+
+
+@pytest.fixture
+def mock_internal_async_session_local() -> Generator[AsyncMock, None, None]:
+    """
+    Patch AsyncSessionLocal in the internal endpoints module.
+
+    The mock acts as an async context manager: __aenter__ returns a fresh
+    AsyncMock db session, __aexit__ returns None.  Yields the fake db session
+    (not the factory) so callers can configure return values directly.
+    """
+    fake_db = AsyncMock()
+    mock_factory = AsyncMock()
+    mock_factory.__aenter__ = AsyncMock(return_value=fake_db)
+    mock_factory.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "app.api.api_v1.endpoints.internal.AsyncSessionLocal",
+        return_value=mock_factory,
+    ):
+        yield fake_db
