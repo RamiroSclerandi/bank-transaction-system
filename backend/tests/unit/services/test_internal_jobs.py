@@ -4,14 +4,20 @@ Unit tests for internal daily job endpoints.
 Tests POST /api/v1/internal/jobs/archive-transactions and
 POST /api/v1/internal/jobs/daily-backup, verifying:
 - Auth enforcement (403 without X-Internal-Api-Key)
-- Correct delegation to archive_service / backup_service
-- Response format
+- Correct delegation to archive_service / backup_service via background tasks
+- 202 Accepted response with accepted body
+- Background function logging via caplog
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from app.api.api_v1.endpoints.internal import router
+from app.api.api_v1.endpoints.internal import (
+    _run_archive_in_background,
+    _run_daily_backup_in_background,
+    router,
+)
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -53,10 +59,14 @@ class TestArchiveTransactionsEndpoint:
         assert response.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_returns_200_with_archived_count(
-        self, app: FastAPI, internal_key: str, mock_archive_service: AsyncMock
+    async def test_returns_202_and_schedules_archive(
+        self,
+        app: FastAPI,
+        internal_key: str,
+        mock_archive_service: AsyncMock,
+        mock_internal_async_session_local: AsyncMock,
     ) -> None:
-        """Valid request should call archive_service and return rows_archived."""
+        """Valid request must return 202 and schedule archive in background."""
         mock_archive_service.return_value = 12
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -66,15 +76,19 @@ class TestArchiveTransactionsEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["rows_archived"] == 12
+        assert response.status_code == 202
+        assert response.json() == {"status": "accepted", "job": "archive-transactions"}
+        mock_archive_service.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_nothing_to_archive(
-        self, app: FastAPI, internal_key: str, mock_archive_service: AsyncMock
+        self,
+        app: FastAPI,
+        internal_key: str,
+        mock_archive_service: AsyncMock,
+        mock_internal_async_session_local: AsyncMock,
     ) -> None:
-        """When archive returns 0, the response must reflect rows_archived=0."""
+        """When archive returns 0, must still return 202 accepted."""
         mock_archive_service.return_value = 0
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -84,8 +98,26 @@ class TestArchiveTransactionsEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        assert response.json()["rows_archived"] == 0
+        assert response.status_code == 202
+        assert response.json() == {"status": "accepted", "job": "archive-transactions"}
+        mock_archive_service.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_archive_background_logs_success(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        mock_archive_service: AsyncMock,
+        mock_internal_async_session_local: AsyncMock,
+    ) -> None:
+        """_run_archive_in_background must log completion with rows_archived count."""
+        mock_archive_service.return_value = 5
+
+        with caplog.at_level(logging.INFO, logger="app.api.api_v1.endpoints.internal"):
+            await _run_archive_in_background()
+
+        assert "internal_job_completed" in caplog.text
+        assert "status=success" in caplog.text
+        assert "rows_archived=5" in caplog.text
 
 
 class TestDailyBackupEndpoint:
@@ -102,10 +134,13 @@ class TestDailyBackupEndpoint:
         assert response.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_returns_200_with_snapshot_info(
-        self, app: FastAPI, internal_key: str, mock_backup_service: AsyncMock
+    async def test_returns_202_and_schedules_backup(
+        self,
+        app: FastAPI,
+        internal_key: str,
+        mock_backup_service: AsyncMock,
     ) -> None:
-        """Valid request should call backup_service and return snapshot_id + status."""
+        """Valid request must return 202 and schedule backup in background."""
         mock_backup_service.return_value = {
             "snapshot_id": "daily-snapshot-2026-05-11",
             "status": "creating",
@@ -118,7 +153,24 @@ class TestDailyBackupEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["snapshot_id"] == "daily-snapshot-2026-05-11"
-        assert data["status"] == "creating"
+        assert response.status_code == 202
+        assert response.json() == {"status": "accepted", "job": "daily-backup"}
+        mock_backup_service.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_backup_background_logs_success(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        mock_backup_service: AsyncMock,
+    ) -> None:
+        """_run_daily_backup_in_background must log success with snapshot details."""
+        mock_backup_service.return_value = {
+            "snapshot_id": "daily-snapshot-2026-05-14",
+            "status": "completed",
+        }
+
+        with caplog.at_level(logging.INFO, logger="app.api.api_v1.endpoints.internal"):
+            await _run_daily_backup_in_background()
+
+        assert "internal_job_completed" in caplog.text
+        assert "status=success" in caplog.text

@@ -2,17 +2,20 @@
 Unit tests for POST /api/v1/internal/cron/process-scheduled.
 
 Tests verify:
-- 200 with correct summary (2 IDs processed)
-- 200 with all zeros (empty run)
-- 409 from service counted as skipped
+- 202 Accepted with accepted body
+- Background processing: 2 IDs processed
+- Empty run accepted
+- 409 from service counted as skipped (background logs)
 - 403 without valid API key
+- Background function logging via caplog
 """
 
+import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from app.api.api_v1.endpoints.internal import router
+from app.api.api_v1.endpoints.internal import _run_cron_in_background, router
 from fastapi import FastAPI, HTTPException, status
 from httpx import ASGITransport, AsyncClient
 
@@ -60,8 +63,9 @@ class TestCronProcessScheduledEndpoint:
         internal_key: str,
         mock_internal_crud_transaction: MagicMock,
         mock_internal_transaction_service: MagicMock,
+        mock_internal_async_session_local: AsyncMock,
     ) -> None:
-        """Valid request with 2 due IDs returns 200 with correct summary."""
+        """Valid request with 2 due IDs returns 202 with accepted body."""
         id1, id2 = uuid.uuid4(), uuid.uuid4()
         mock_internal_crud_transaction.get_due_ids = AsyncMock(return_value=[id1, id2])
         mock_internal_transaction_service.process_scheduled_transaction = AsyncMock(
@@ -76,22 +80,22 @@ class TestCronProcessScheduledEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total"] == 2
-        assert data["processed"] == 2
-        assert data["skipped"] == 0
-        assert data["errors"] == 0
+        assert response.status_code == 202
+        assert response.json() == {
+            "status": "accepted",
+            "job": "cron-process-scheduled",
+        }
 
     @pytest.mark.asyncio
-    async def test_empty_run_returns_all_zeros(
+    async def test_empty_run_returns_accepted(
         self,
         app: FastAPI,
         internal_key: str,
         mock_internal_crud_transaction: MagicMock,
         mock_internal_transaction_service: MagicMock,
+        mock_internal_async_session_local: AsyncMock,
     ) -> None:
-        """When no due IDs, response must be all zeros."""
+        """When no due IDs, response must still be 202 accepted."""
         mock_internal_crud_transaction.get_due_ids = AsyncMock(return_value=[])
         mock_internal_transaction_service.process_scheduled_transaction = AsyncMock()
 
@@ -103,9 +107,11 @@ class TestCronProcessScheduledEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data == {"total": 0, "processed": 0, "skipped": 0, "errors": 0}
+        assert response.status_code == 202
+        assert response.json() == {
+            "status": "accepted",
+            "job": "cron-process-scheduled",
+        }
 
     @pytest.mark.asyncio
     async def test_409_from_service_counted_as_skipped(
@@ -114,8 +120,9 @@ class TestCronProcessScheduledEndpoint:
         internal_key: str,
         mock_internal_crud_transaction: MagicMock,
         mock_internal_transaction_service: MagicMock,
+        mock_internal_async_session_local: AsyncMock,
     ) -> None:
-        """When service raises HTTPException(409), it must be counted as skipped."""
+        """When service raises HTTPException(409) in background, returns 202."""
         id1 = uuid.uuid4()
         mock_internal_crud_transaction.get_due_ids = AsyncMock(return_value=[id1])
         mock_internal_transaction_service.process_scheduled_transaction = AsyncMock(
@@ -130,9 +137,30 @@ class TestCronProcessScheduledEndpoint:
                 headers={"X-Internal-Api-Key": internal_key},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total"] == 1
-        assert data["processed"] == 0
-        assert data["skipped"] == 1
-        assert data["errors"] == 0
+        assert response.status_code == 202
+        assert response.json() == {
+            "status": "accepted",
+            "job": "cron-process-scheduled",
+        }
+
+    @pytest.mark.asyncio
+    async def test_cron_background_logs_success(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        mock_internal_crud_transaction: MagicMock,
+        mock_internal_transaction_service: MagicMock,
+        mock_internal_async_session_local: AsyncMock,
+    ) -> None:
+        """_run_cron_in_background must log completion with processed count."""
+        id1, id2 = uuid.uuid4(), uuid.uuid4()
+        mock_internal_crud_transaction.get_due_ids = AsyncMock(return_value=[id1, id2])
+        mock_internal_transaction_service.process_scheduled_transaction = AsyncMock(
+            return_value=None
+        )
+
+        with caplog.at_level(logging.INFO, logger="app.api.api_v1.endpoints.internal"):
+            await _run_cron_in_background()
+
+        assert "internal_job_completed" in caplog.text
+        assert "job=cron-process-scheduled" in caplog.text
+        assert "processed=2" in caplog.text
